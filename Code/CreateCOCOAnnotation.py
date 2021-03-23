@@ -30,10 +30,10 @@ def CreateCOCODataset(imagePath, annotationPath):
         print(imagePath)
         for fileName in os.listdir(imagePath):
                 imgObj = {
-                        "file_name"     :    fileName,   
-                        "image_id"      :    imgCount,
+                        "id"            :    imgCount,
                         "height"        :    512,
-                        "width"         :    512
+                        "width"         :    512,
+                        "file_name"     :    fileName   
                 }
                 images.append(imgObj)
                 imgCount = imgCount+1
@@ -58,6 +58,7 @@ def CreateCOCODataset(imagePath, annotationPath):
                         segmentation.append(annotation)
 
                 annos = {
+                        "id"            :       annoCount,
                         "image_id"      :       annoCount,
                         "iscrowd"       :       0,
                         "category_id"   :       1,
@@ -68,10 +69,13 @@ def CreateCOCODataset(imagePath, annotationPath):
         JsonDataset["annotations"] = annotations
 
         #categories
-        categories = {
-                "category_id"           :       1,
-                "category_name"         :       "Open landfills"
+        categories = []
+        category = {
+                "id"                     :       1,
+                "name"                   :       "Open_landfills",
+                "supercategory"          :       "none"
         }
+        categories.append(category)
         JsonDataset["categories"] = categories
         return JsonDataset
 

@@ -2340,9 +2340,11 @@
             ]
         }
     ],
-    "categories": {
-        "id": 1,
-        "name": "Open_landfills",
-        "supercategory": "none"
-    }
+    "categories": [
+        {
+            "id": 1,
+            "name": "Open_landfills",
+            "supercategory": "none"
+        }
+    ]
 }

@@ -14,326 +14,327 @@
     },
     "images": [
         {
-            "file_name": "00001_Berlin_Germany.tif",
-            "image_id": 1,
+            "id": 1,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00001_Berlin_Germany.tif"
         },
         {
-            "file_name": "00002_Berlin_Germany.tif",
-            "image_id": 2,
+            "id": 2,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00002_Berlin_Germany.tif"
         },
         {
-            "file_name": "00003_Budapest_Hungary.tif",
-            "image_id": 3,
+            "id": 3,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00003_Budapest_Hungary.tif"
         },
         {
-            "file_name": "00004_Erd_Hungary.tif",
-            "image_id": 4,
+            "id": 4,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00004_Erd_Hungary.tif"
         },
         {
-            "file_name": "00005_Erd_Hungary.tif",
-            "image_id": 5,
+            "id": 5,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00005_Erd_Hungary.tif"
         },
         {
-            "file_name": "00006_Erd_Hungary.tif",
-            "image_id": 6,
+            "id": 6,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00006_Erd_Hungary.tif"
         },
         {
-            "file_name": "00007_Erd_Hungary.tif",
-            "image_id": 7,
+            "id": 7,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00007_Erd_Hungary.tif"
         },
         {
-            "file_name": "00008_Erd_Hungary.tif",
-            "image_id": 8,
+            "id": 8,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00008_Erd_Hungary.tif"
         },
         {
-            "file_name": "00009_Erd_Hungary.tif",
-            "image_id": 9,
+            "id": 9,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00009_Erd_Hungary.tif"
         },
         {
-            "file_name": "00010_Erd_Hungary.tif",
-            "image_id": 10,
+            "id": 10,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00010_Erd_Hungary.tif"
         },
         {
-            "file_name": "00011_Ersci_Hungary.tif",
-            "image_id": 11,
+            "id": 11,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00011_Ersci_Hungary.tif"
         },
         {
-            "file_name": "00012_Ersci_Hungary.tif",
-            "image_id": 12,
+            "id": 12,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00012_Ersci_Hungary.tif"
         },
         {
-            "file_name": "00013_Ersci_Hungary.tif",
-            "image_id": 13,
+            "id": 13,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00013_Ersci_Hungary.tif"
         },
         {
-            "file_name": "00014_Ersci_Hungary.tif",
-            "image_id": 14,
+            "id": 14,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00014_Ersci_Hungary.tif"
         },
         {
-            "file_name": "00015_Ersci_Hungary.tif",
-            "image_id": 15,
+            "id": 15,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00015_Ersci_Hungary.tif"
         },
         {
-            "file_name": "00016_God_Hungary.tif",
-            "image_id": 16,
+            "id": 16,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00016_God_Hungary.tif"
         },
         {
-            "file_name": "00017_God_Hungary.tif",
-            "image_id": 17,
+            "id": 17,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00017_God_Hungary.tif"
         },
         {
-            "file_name": "00018_Hanover_Germany.tif",
-            "image_id": 18,
+            "id": 18,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00018_Hanover_Germany.tif"
         },
         {
-            "file_name": "00019_Hanover_Germany.tif",
-            "image_id": 19,
+            "id": 19,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00019_Hanover_Germany.tif"
         },
         {
-            "file_name": "00020_Hanover_Germany.tif",
-            "image_id": 20,
+            "id": 20,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00020_Hanover_Germany.tif"
         },
         {
-            "file_name": "00021_Hanover_Germany.tif",
-            "image_id": 21,
+            "id": 21,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00021_Hanover_Germany.tif"
         },
         {
-            "file_name": "00022_Abd_India.tif",
-            "image_id": 22,
+            "id": 22,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00022_Abd_India.tif"
         },
         {
-            "file_name": "00023_Abd_India.tif",
-            "image_id": 23,
+            "id": 23,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00023_Abd_India.tif"
         },
         {
-            "file_name": "00024_Abd_India.tif",
-            "image_id": 24,
+            "id": 24,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00024_Abd_India.tif"
         },
         {
-            "file_name": "00025_Abd_India.tif",
-            "image_id": 25,
+            "id": 25,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00025_Abd_India.tif"
         },
         {
-            "file_name": "00026_Abd_India.tif",
-            "image_id": 26,
+            "id": 26,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00026_Abd_India.tif"
         },
         {
-            "file_name": "00027_Abd_India.tif",
-            "image_id": 27,
+            "id": 27,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00027_Abd_India.tif"
         },
         {
-            "file_name": "00028_Mumbai_India.tif",
-            "image_id": 28,
+            "id": 28,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00028_Mumbai_India.tif"
         },
         {
-            "file_name": "00029_Mumbai_India.tif",
-            "image_id": 29,
+            "id": 29,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00029_Mumbai_India.tif"
         },
         {
-            "file_name": "00030_Mumbai_India.tif",
-            "image_id": 30,
+            "id": 30,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00030_Mumbai_India.tif"
         },
         {
-            "file_name": "00031_Mumbai_India.tif",
-            "image_id": 31,
+            "id": 31,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00031_Mumbai_India.tif"
         },
         {
-            "file_name": "00032_Nurnberg_Germany.tif",
-            "image_id": 32,
+            "id": 32,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00032_Nurnberg_Germany.tif"
         },
         {
-            "file_name": "00033_Nurnberg_Germany.tif",
-            "image_id": 33,
+            "id": 33,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00033_Nurnberg_Germany.tif"
         },
         {
-            "file_name": "00034_Rio_Brazil.tif",
-            "image_id": 34,
+            "id": 34,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00034_Rio_Brazil.tif"
         },
         {
-            "file_name": "00035_Rio_Brazil.tif",
-            "image_id": 35,
+            "id": 35,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00035_Rio_Brazil.tif"
         },
         {
-            "file_name": "00036_Rio_Brazil.tif",
-            "image_id": 36,
+            "id": 36,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00036_Rio_Brazil.tif"
         },
         {
-            "file_name": "00037_Rio_Brazil.tif",
-            "image_id": 37,
+            "id": 37,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00037_Rio_Brazil.tif"
         },
         {
-            "file_name": "00038_Malta_France.tif",
-            "image_id": 38,
+            "id": 38,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00038_Malta_France.tif"
         },
         {
-            "file_name": "00039_Malta_France.tif",
-            "image_id": 39,
+            "id": 39,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00039_Malta_France.tif"
         },
         {
-            "file_name": "00040_Malta_France.tif",
-            "image_id": 40,
+            "id": 40,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00040_Malta_France.tif"
         },
         {
-            "file_name": "00041_Malta_France.tif",
-            "image_id": 41,
+            "id": 41,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00041_Malta_France.tif"
         },
         {
-            "file_name": "00042_Malta_France.tif",
-            "image_id": 42,
+            "id": 42,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00042_Malta_France.tif"
         },
         {
-            "file_name": "00043_Malta_France.tif",
-            "image_id": 43,
+            "id": 43,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00043_Malta_France.tif"
         },
         {
-            "file_name": "00044_Tatabanya_Hungary.tif",
-            "image_id": 44,
+            "id": 44,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00044_Tatabanya_Hungary.tif"
         },
         {
-            "file_name": "00045_Tatabanya_Hungary.tif",
-            "image_id": 45,
+            "id": 45,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00045_Tatabanya_Hungary.tif"
         },
         {
-            "file_name": "00046_Tatabanya_Hungary.tif",
-            "image_id": 46,
+            "id": 46,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00046_Tatabanya_Hungary.tif"
         },
         {
-            "file_name": "00047_Tatabanya_Hungary.tif",
-            "image_id": 47,
+            "id": 47,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00047_Tatabanya_Hungary.tif"
         },
         {
-            "file_name": "00048_Vinca_Serbia.tif",
-            "image_id": 48,
+            "id": 48,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00048_Vinca_Serbia.tif"
         },
         {
-            "file_name": "00049_Vinca_Serbia.tif",
-            "image_id": 49,
+            "id": 49,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00049_Vinca_Serbia.tif"
         },
         {
-            "file_name": "00050_Vinca_Serbia.tif",
-            "image_id": 50,
+            "id": 50,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00050_Vinca_Serbia.tif"
         },
         {
-            "file_name": "00051_Vinca_Serbia.tif",
-            "image_id": 51,
+            "id": 51,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00051_Vinca_Serbia.tif"
         },
         {
-            "file_name": "00052_Vinca_Serbia.tif",
-            "image_id": 52,
+            "id": 52,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00052_Vinca_Serbia.tif"
         },
         {
-            "file_name": "00053_Vinca_Serbia.tif",
-            "image_id": 53,
+            "id": 53,
             "height": 512,
-            "width": 512
+            "width": 512,
+            "file_name": "00053_Vinca_Serbia.tif"
         }
     ],
     "annotations": [
         {
+            "id": 1,
             "image_id": 1,
             "iscrowd": 0,
             "category_id": 1,
@@ -365,6 +366,7 @@
             ]
         },
         {
+            "id": 2,
             "image_id": 2,
             "iscrowd": 0,
             "category_id": 1,
@@ -384,6 +386,7 @@
             ]
         },
         {
+            "id": 3,
             "image_id": 3,
             "iscrowd": 0,
             "category_id": 1,
@@ -413,6 +416,7 @@
             ]
         },
         {
+            "id": 4,
             "image_id": 4,
             "iscrowd": 0,
             "category_id": 1,
@@ -430,6 +434,7 @@
             ]
         },
         {
+            "id": 5,
             "image_id": 5,
             "iscrowd": 0,
             "category_id": 1,
@@ -467,6 +472,7 @@
             ]
         },
         {
+            "id": 6,
             "image_id": 6,
             "iscrowd": 0,
             "category_id": 1,
@@ -496,6 +502,7 @@
             ]
         },
         {
+            "id": 7,
             "image_id": 7,
             "iscrowd": 0,
             "category_id": 1,
@@ -513,6 +520,7 @@
             ]
         },
         {
+            "id": 8,
             "image_id": 8,
             "iscrowd": 0,
             "category_id": 1,
@@ -538,6 +546,7 @@
             ]
         },
         {
+            "id": 9,
             "image_id": 9,
             "iscrowd": 0,
             "category_id": 1,
@@ -563,6 +572,7 @@
             ]
         },
         {
+            "id": 10,
             "image_id": 10,
             "iscrowd": 0,
             "category_id": 1,
@@ -586,6 +596,7 @@
             ]
         },
         {
+            "id": 11,
             "image_id": 11,
             "iscrowd": 0,
             "category_id": 1,
@@ -607,6 +618,7 @@
             ]
         },
         {
+            "id": 12,
             "image_id": 12,
             "iscrowd": 0,
             "category_id": 1,
@@ -660,6 +672,7 @@
             ]
         },
         {
+            "id": 13,
             "image_id": 13,
             "iscrowd": 0,
             "category_id": 1,
@@ -679,6 +692,7 @@
             ]
         },
         {
+            "id": 14,
             "image_id": 14,
             "iscrowd": 0,
             "category_id": 1,
@@ -696,6 +710,7 @@
             ]
         },
         {
+            "id": 15,
             "image_id": 15,
             "iscrowd": 0,
             "category_id": 1,
@@ -751,6 +766,7 @@
             ]
         },
         {
+            "id": 16,
             "image_id": 16,
             "iscrowd": 0,
             "category_id": 1,
@@ -796,6 +812,7 @@
             ]
         },
         {
+            "id": 17,
             "image_id": 17,
             "iscrowd": 0,
             "category_id": 1,
@@ -831,6 +848,7 @@
             ]
         },
         {
+            "id": 18,
             "image_id": 18,
             "iscrowd": 0,
             "category_id": 1,
@@ -862,6 +880,7 @@
             ]
         },
         {
+            "id": 19,
             "image_id": 19,
             "iscrowd": 0,
             "category_id": 1,
@@ -921,6 +940,7 @@
             ]
         },
         {
+            "id": 20,
             "image_id": 20,
             "iscrowd": 0,
             "category_id": 1,
@@ -962,6 +982,7 @@
             ]
         },
         {
+            "id": 21,
             "image_id": 21,
             "iscrowd": 0,
             "category_id": 1,
@@ -1007,6 +1028,7 @@
             ]
         },
         {
+            "id": 22,
             "image_id": 22,
             "iscrowd": 0,
             "category_id": 1,
@@ -1030,6 +1052,7 @@
             ]
         },
         {
+            "id": 23,
             "image_id": 23,
             "iscrowd": 0,
             "category_id": 1,
@@ -1069,6 +1092,7 @@
             ]
         },
         {
+            "id": 24,
             "image_id": 24,
             "iscrowd": 0,
             "category_id": 1,
@@ -1088,6 +1112,7 @@
             ]
         },
         {
+            "id": 25,
             "image_id": 25,
             "iscrowd": 0,
             "category_id": 1,
@@ -1143,6 +1168,7 @@
             ]
         },
         {
+            "id": 26,
             "image_id": 26,
             "iscrowd": 0,
             "category_id": 1,
@@ -1204,6 +1230,7 @@
             ]
         },
         {
+            "id": 27,
             "image_id": 27,
             "iscrowd": 0,
             "category_id": 1,
@@ -1227,6 +1254,7 @@
             ]
         },
         {
+            "id": 28,
             "image_id": 28,
             "iscrowd": 0,
             "category_id": 1,
@@ -1264,6 +1292,7 @@
             ]
         },
         {
+            "id": 29,
             "image_id": 29,
             "iscrowd": 0,
             "category_id": 1,
@@ -1297,6 +1326,7 @@
             ]
         },
         {
+            "id": 30,
             "image_id": 30,
             "iscrowd": 0,
             "category_id": 1,
@@ -1398,6 +1428,7 @@
             ]
         },
         {
+            "id": 31,
             "image_id": 31,
             "iscrowd": 0,
             "category_id": 1,
@@ -1433,6 +1464,7 @@
             ]
         },
         {
+            "id": 32,
             "image_id": 32,
             "iscrowd": 0,
             "category_id": 1,
@@ -1462,6 +1494,7 @@
             ]
         },
         {
+            "id": 33,
             "image_id": 33,
             "iscrowd": 0,
             "category_id": 1,
@@ -1509,6 +1542,7 @@
             ]
         },
         {
+            "id": 34,
             "image_id": 34,
             "iscrowd": 0,
             "category_id": 1,
@@ -1538,6 +1572,7 @@
             ]
         },
         {
+            "id": 35,
             "image_id": 35,
             "iscrowd": 0,
             "category_id": 1,
@@ -1571,6 +1606,7 @@
             ]
         },
         {
+            "id": 36,
             "image_id": 36,
             "iscrowd": 0,
             "category_id": 1,
@@ -1594,6 +1630,7 @@
             ]
         },
         {
+            "id": 37,
             "image_id": 37,
             "iscrowd": 0,
             "category_id": 1,
@@ -1641,6 +1678,7 @@
             ]
         },
         {
+            "id": 38,
             "image_id": 38,
             "iscrowd": 0,
             "category_id": 1,
@@ -1672,6 +1710,7 @@
             ]
         },
         {
+            "id": 39,
             "image_id": 39,
             "iscrowd": 0,
             "category_id": 1,
@@ -1695,6 +1734,7 @@
             ]
         },
         {
+            "id": 40,
             "image_id": 40,
             "iscrowd": 0,
             "category_id": 1,
@@ -1740,6 +1780,7 @@
             ]
         },
         {
+            "id": 41,
             "image_id": 41,
             "iscrowd": 0,
             "category_id": 1,
@@ -1805,6 +1846,7 @@
             ]
         },
         {
+            "id": 42,
             "image_id": 42,
             "iscrowd": 0,
             "category_id": 1,
@@ -1874,6 +1916,7 @@
             ]
         },
         {
+            "id": 43,
             "image_id": 43,
             "iscrowd": 0,
             "category_id": 1,
@@ -1911,6 +1954,7 @@
             ]
         },
         {
+            "id": 44,
             "image_id": 44,
             "iscrowd": 0,
             "category_id": 1,
@@ -1948,6 +1992,7 @@
             ]
         },
         {
+            "id": 45,
             "image_id": 45,
             "iscrowd": 0,
             "category_id": 1,
@@ -1971,6 +2016,7 @@
             ]
         },
         {
+            "id": 46,
             "image_id": 46,
             "iscrowd": 0,
             "category_id": 1,
@@ -2000,6 +2046,7 @@
             ]
         },
         {
+            "id": 47,
             "image_id": 47,
             "iscrowd": 0,
             "category_id": 1,
@@ -2039,6 +2086,7 @@
             ]
         },
         {
+            "id": 48,
             "image_id": 48,
             "iscrowd": 0,
             "category_id": 1,
@@ -2070,6 +2118,7 @@
             ]
         },
         {
+            "id": 49,
             "image_id": 49,
             "iscrowd": 0,
             "category_id": 1,
@@ -2131,6 +2180,7 @@
             ]
         },
         {
+            "id": 50,
             "image_id": 50,
             "iscrowd": 0,
             "category_id": 1,
@@ -2164,6 +2214,7 @@
             ]
         },
         {
+            "id": 51,
             "image_id": 51,
             "iscrowd": 0,
             "category_id": 1,
@@ -2211,6 +2262,7 @@
             ]
         },
         {
+            "id": 52,
             "image_id": 52,
             "iscrowd": 0,
             "category_id": 1,
@@ -2244,6 +2296,7 @@
             ]
         },
         {
+            "id": 53,
             "image_id": 53,
             "iscrowd": 0,
             "category_id": 1,
@@ -2288,7 +2341,8 @@
         }
     ],
     "categories": {
-        "category_id": 1,
-        "category_name": "Open landfills"
+        "id": 1,
+        "name": "Open_landfills",
+        "supercategory": "none"
     }
 }

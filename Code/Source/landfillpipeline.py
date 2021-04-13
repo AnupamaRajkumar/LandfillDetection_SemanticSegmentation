@@ -228,13 +228,13 @@ print("Train data class proportions:", get_class_proportion(train_idx))
 print("Test data class proportions:", get_class_proportion(test_idx))
 
 #parameters
-batch_size = 10
+batch_size = 6
 num_workers = 1
-num_classes = 1
-epochs = 100
+num_classes = 2       #landfill or background
+epochs = 50
 lr = 1e-3
 w_decay = 1e-5
-momentum = 0
+momentum = 0.9
 step_size = 50
 gamma = 0.5
 image_size = 512
@@ -257,11 +257,12 @@ test_transforms = transforms.Compose([transforms.ToTensor(),
                                       transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])])
 
 class CustomLandfillDataset(torch.utils.data.Dataset):
-  def __init__(self, data, transforms):                             #transforms
+  def __init__(self, data, transforms, num_classes=num_classes):                             #transforms
     self.data = data
     self.transforms = transforms
     self.json_frame = pd.read_csv(train_labels, usecols=["json index"])
     self.isLandfillList = pd.read_csv(train_labels, usecols=["IsLandfill"]).values.tolist()
+    self.num_classes = num_classes
 
   def __len__(self):
     return len(self.data)
@@ -281,12 +282,12 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     image = raster_img
 
     #in case the image is smaller than 512x512
-    if((raster_img.shape[1] < patch_width) or (raster_img.shape[2] < patch_height)):
-      image = np.zeros((patch_width, patch_height), dtype=np.float32)
+    if((raster_img.shape[1] < patch_height) or (raster_img.shape[2] < patch_width)):
+      image = np.zeros((patch_height, patch_width), dtype=np.float32)
       image[0:raster_img.shape[1], 0:raster_img.shape[2]] = raster_img[0,:,:]
       image = np.expand_dims(image, axis=0)
       for c in range(raster_channels-1):
-        resized_raster = np.zeros((patch_width, patch_height), dtype=np.float32)
+        resized_raster = np.zeros((patch_height, patch_width), dtype=np.float32)
         #np.copy(resized_raster, raster_img[c,:,:])
         resized_raster[0:raster_img.shape[1], 0:raster_img.shape[2]] = raster_img[c+1,:,:]
         resized_raster = np.expand_dims(resized_raster,axis=0)
@@ -295,11 +296,11 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #stack dummy channels if number of channels less than 8
     if(raster_channels < 8):
       diff = 8 - raster_channels
-      dummy_channels = np.zeros((patch_width, patch_height), dtype=np.float32)
+      dummy_channels = np.zeros((patch_height, patch_width), dtype=np.float32)
       dummy_channels = np.expand_dims(dummy_channels, axis=0)
       #print(dummy_channels.shape)
       for i in range(diff-1):
-        dummy_channel = np.zeros((patch_width, patch_height), dtype=np.float32)
+        dummy_channel = np.zeros((patch_height, patch_width), dtype=np.float32)
         dummy_channel = np.expand_dims(dummy_channel, axis=0)
         dummy_channels = np.vstack((dummy_channel, dummy_channels))
         #print("dummy_channel=", dummy_channel.shape,"dummy_channels=", dummy_channels.shape)
@@ -323,16 +324,21 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
                                                reference_im=os.path.join(train_path, img_name))
       fp_mask = fp_mask.astype('float32')
     else:
-      fp_mask = np.zeros((patch_width, patch_height), dtype=np.float32)
+      fp_mask = np.zeros((patch_height, patch_width), dtype=np.float32)
     
     #create another mask variable
     mask = fp_mask
     #in case the mask size is smaller than 512x512
-    if((fp_mask.shape[0] < patch_width) or (fp_mask.shape[1] < patch_height)):
-      mask = np.zeros((patch_width, patch_height), dtype=np.float32)
+    if((fp_mask.shape[0] < patch_height) or (fp_mask.shape[1] < patch_width)):
+      mask = np.zeros((patch_height, patch_width), dtype=np.float32)
       mask[0:fp_mask.shape[0], 0:fp_mask.shape[1]] = fp_mask
+
+    #one hot encoding of the mask depending on the number of classes
+    mask_hotEnc = torch.zeros(self.num_classes, patch_height, patch_width)
+    for n in range(self.num_classes):
+      mask_hotEnc[n][mask==n] = 1
       
-    mask = np.expand_dims(mask, axis=0)
+    #mask = np.expand_dims(mask, axis=0)
     #print("image shape:",image.shape," mask shape:", mask.shape)
     #print("transformed image shape:", rgb_image.shape, " transformed mask shape:", mask.shape)
 
@@ -340,7 +346,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     img_info["RGBimage"] = rgb_image
     img_info["image"] = image
     img_info["mask"] = mask
-    img_info["maskTfm"] = mask
+    img_info["maskHotEnc"] = mask_hotEnc
     img_info["channels"] = raster_channels
     img_info["name"] = img_name
     img_info["image_id"] = img_id
@@ -376,11 +382,22 @@ img_info = next(iter(train_loader))
 image = img_info['image']
 rgb_img = img_info['RGBimage']
 mask = img_info['mask']
-maskTfm = img_info['maskTfm']
+mask_hotEnc = img_info['maskHotEnc']
 channels = img_info['channels']
 
 print("image shape:", image.shape, "image mask:", mask.shape, "channels:", channels)
-print("transformed image shape:", rgb_img.shape, "transformed mask:", mask.shape)
+print("transformed image shape:", rgb_img.shape, "hot encoded mask:", mask_hotEnc.shape)
+
+test_info = next(iter(test_loader))
+
+image = img_info['image']
+rgb_img = img_info['RGBimage']
+mask = img_info['mask']
+mask_hotEnc = img_info['maskHotEnc']
+channels = img_info['channels']
+
+print("image shape:", image.shape, "image mask:", mask.shape, "channels:", channels)
+print("transformed image shape:", rgb_img.shape, "hot encoded mask:", mask_hotEnc.shape)
 
 """Display the images from the train set"""
 
@@ -434,7 +451,7 @@ for idx in np.arange(batch_size):
   #print(name)
   channels = img_info["channels"][idx].item()  
   image = im_convert(name, channels)
-  mask = img_info["maskTfm"][idx].detach().numpy().transpose(1,2,0).squeeze()
+  mask = img_info["mask"][idx].detach().numpy()
   #print(image.shape)
   axs[count][0].title.set_text(name)
   axs[count][0].imshow(image)
@@ -479,7 +496,7 @@ def load_model(enc_model=enc_model):
     model = models.vgg16(pretrained=pretrained)
   if enc_model == 'vgg19':
     model = models.vgg19(pretrained=pretrained)
-  #print(model)
+  print(model)
   return model
 
 class VGGNet():
@@ -492,7 +509,7 @@ class VGGNet():
     cnt = 0
     for child in self.model.children():
         for name, param in child.named_parameters():
-          if cnt < 4:
+          if cnt < 9:
             #print(name)
             param.requires_grad = False
           cnt += 1
@@ -505,15 +522,6 @@ class VGGNet():
     for name, param in self.model.named_parameters():
       if param.requires_grad == True:
         print("\t", name, "\t", param.size())
-
-    """
-    output = {}
-    for idx in range(len(self.maxpool_ranges)):
-      for layer in range(self.maxpool_ranges[idx][0], self.maxpool_ranges[idx][1]):
-          x = self.model.features[layer]
-      output["x%d"%(idx+1)] = x
-    print(output)
-    """
 
   def forward(self, x):
     output = {}
@@ -578,40 +586,40 @@ FCN_model = FCN_model.to(device)
 
 """Loss and optimiser"""
 
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.RMSprop(FCN_model.parameters(), lr=lr, momentum=momentum, weight_decay=w_decay)
+criterion = nn.BCEWithLogitsLoss() #BCEWithLogits()
+optimizer = optim.SGD(FCN_model.parameters(), lr=lr, momentum=momentum)
 
 #https://github.com/pochih/FCN-pytorch/blob/8436fab3586f118eb36265dab4c5f900748bb02d/python/train.py
 model_path = './vgg_16_FCN.pth'
+score_dir = './'
+IU_scores    = np.zeros((epochs, num_classes))
+pixel_scores = np.zeros(epochs)
+train_losses = []
+ious_mean = []
+ious_ = []
+pixelAccs_mean = []
+
 def TrainFunction():
-  losses = []
-  accuracy = []
   for epoch in range(epochs):
     t0 = time.time()
     train_loss = 0.0
     #FCN_model.train()
     for batch, img_info in enumerate(train_loader):
-      print(batch)
-      #img_info = img_info.to(device)
       rgb_img = img_info['RGBimage']
-      maskTfm = img_info['maskTfm']
+      mask_hotEnc = img_info['maskHotEnc']
       rgb_img = rgb_img.to(device)
-      maskTfm = maskTfm.to(device)
-      #print(rgb_img.is_cuda, "\t", maskTfm.is_cuda)
-      #print(rgb_img.shape, "\t", maskTfm.shape)
-      #print("Finding model output")
+      mask_hotEnc = mask_hotEnc.to(device)
       outputs = FCN_model(rgb_img)
-      #print("Calculating loss")
-      loss = criterion(outputs, maskTfm)
-      #print("accumulating training loss")
+      loss = criterion(outputs, mask_hotEnc)
       train_loss += loss.item()*rgb_img.size(0)
       optimizer.zero_grad()
       loss.backward()
       optimizer.step()
-      print("epoch: {}, batch: {}, Training loss: {}".format(epoch, batch, train_loss))
+      #print("epoch: {}/{}, batch: {}".format(epoch, epochs, batch))
     train_loss = train_loss/len(train_loader)
-    print("Finish epoch: {}, Loss in epoch:{}, time elapsed: {}".format(epoch, train_loss, time.time() - t0))
-    torch.save(FCN_model, model_path)
+    train_losses.append(train_loss)
+    print("Finish epoch: {}/{}, Loss in epoch:{}, time elapsed: {}".format(epoch, epochs, train_loss, time.time() - t0))
+    torch.save(FCN_model.state_dict(), model_path)
     ValFunction(epoch)
 
 def ValFunction(epoch):
@@ -620,10 +628,70 @@ def ValFunction(epoch):
   pixel_accs = []
   for batch, img_info in enumerate(test_loader):
     rgb_img = img_info['RGBimage']
-    maskTfm = img_info['maskTfm']
+    mask_hotEnc = img_info['maskHotEnc']
+    target = img_info['mask'].detach().numpy()
     rgb_img = rgb_img.to(device)
-    maskTfm = maskTfm.to(device)
+    mask_hotEnc = mask_hotEnc.to(device)
     outputs = FCN_model(rgb_img)
     outputs = outputs.data.cpu().numpy()
+    batchSize, _, h, w = outputs.shape
+    predict = outputs.transpose(0, 2, 3, 1).reshape(-1, num_classes).argmax(axis=1).reshape(batchSize, h, w)  
+    #print(predict.shape)
+    #determine performance metrics
+    for p, t in zip(predict, target):
+      total_ious.append(iou(p,t))
+      pixel_accs.append(pixel_accuracy(p, t))
+
+  #calculating average IOUs
+  total_ious = np.array(total_ious).T  # n_class * val_len
+  ious = np.nanmean(total_ious, axis=1)
+  pixel_accs = np.array(pixel_accs).mean()
+  print("epoch: {}/{}, pix_acc: {}, meanIoU: {}, IoUs: {}".format(epoch, epochs, pixel_accs, np.nanmean(ious), ious))
+  ious_.append(ious)
+  ious_mean.append(np.nanmean(ious))
+  pixelAccs_mean.append(pixel_accs)
+  IU_scores[epoch] = ious
+  np.save(os.path.join(score_dir, "meanIU"), IU_scores)
+  pixel_scores[epoch] = pixel_accs
+  np.save(os.path.join(score_dir, "meanPixel"), pixel_scores)
+
+"""Common semantic segmentation performance metrics"""
+
+#total pixel accuracy
+def pixel_accuracy(pred, target):
+  correct = (pred == target).sum()
+  total = (target == target).sum()
+  return (correct/total)
+
+def iou(pred, target):
+  ious = []
+  for cls in range(num_classes):
+    pred_inds = (pred == cls)
+    target_inds = (target == cls)
+    intersection = pred_inds[target_inds].sum()
+    union = pred_inds.sum() + target_inds.sum() - intersection
+    if(union == 0):
+      ious.append(float('nan'))
+    else:
+      ious.append(float(intersection) / max(union, 1))
+  #print(ious)
+  return ious
+
+"""Train the model and run validations"""
 
 TrainFunction()
+
+"""Plot the loss and scores"""
+
+plt.plot(train_losses)
+plt.xlabel('Epoch')
+plt.ylabel('Training loss')
+plt.legend()
+
+plt.plot(pixelAccs_mean, label='Validation pixel accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Validation accuracy')
+plt.legend()
+
+plt.plot(ious_, label='IOU')
+plt.plot(ious_mean, label = 'Mean IOUs')

@@ -31,6 +31,7 @@ Solaris installation with gdal\
 import py7zr
 import os
 import time
+import random
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -208,8 +209,8 @@ We will use random over-sampling as we have a small set of data - TBD
 
 """Stratified and random split into train, test and validation datasets"""
 
-train_ratio = 0.75
-test_ratio = 0.25
+train_ratio = 0.70
+test_ratio = 0.30
 #validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
@@ -243,28 +244,43 @@ image_size = 512
 patch_width = 512
 patch_height= 512
 
-"""Custom augmentations using imgaug library
-
-Add transform to resize and normalise the images
-"""
-
-#transforms.ToPILImage(),
-#transforms.Resize((224, 224)),
-#transforms.ToTensor(),
-
-train_transforms = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])])
-
-test_transforms = transforms.Compose([transforms.ToTensor(),
-                                      transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])])
+"""Create custom transforms to perform data augmentation in the class"""
 
 class CustomLandfillDataset(torch.utils.data.Dataset):
-  def __init__(self, data, transforms, num_classes=num_classes):                             #transforms
+  def __init__(self, data, transforms=None, num_classes=num_classes):                             #transforms
     self.data = data
-    self.transforms = transforms
+    #self.transforms = transforms
     self.json_frame = pd.read_csv(train_labels, usecols=["json index"])
     self.isLandfillList = pd.read_csv(train_labels, usecols=["IsLandfill"]).values.tolist()
     self.num_classes = num_classes
+
+  def transform(self, image, mask):
+    #convert image and mask to PIL Images
+    image = TF.to_pil_image(image)
+    mask = TF.to_pil_image(mask)
+
+    #random horizontal flip
+    if random.random() > 0.5:
+      image = TF.hflip(image)
+      mask = TF.hflip(mask)
+
+    #random vertical flip
+    if random.random() > 0.5:
+      image = TF.vflip(image)
+      mask = TF.vflip(mask)
+
+    #random rotation
+    image = TF.rotate(image, angle=10.0)
+    mask = TF.rotate(mask, angle=10.0)
+
+    #convert PIL image and mask to tensor before returning
+    image = TF.to_tensor(image)
+    mask = TF.to_tensor(mask)
+
+    #normalise the image as per mean and std dev
+    image = TF.normalize(image, mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+
+    return image, mask
 
   def __len__(self):
     return len(self.data)
@@ -277,50 +293,9 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #read the image to extract number of channels
     raster_img = rasterio.open(os.path.join(train_path, img_name)).read()
     #change datatype of image from uint16 to int32
-    raster_img = raster_img.astype('float32')
+    raster_img = raster_img.astype('uint8')
     #print(raster_img.shape)
     raster_channels = raster_img.shape[0]
-    #create another image variable
-    image = raster_img
-
-    #in case the image is smaller than 512x512
-    if((raster_img.shape[1] < patch_height) or (raster_img.shape[2] < patch_width)):
-      image = np.zeros((patch_height, patch_width), dtype=np.float32)
-      image[0:raster_img.shape[1], 0:raster_img.shape[2]] = raster_img[0,:,:]
-      image = np.expand_dims(image, axis=0)
-      for c in range(raster_channels-1):
-        resized_raster = np.zeros((patch_height, patch_width), dtype=np.float32)
-        #np.copy(resized_raster, raster_img[c,:,:])
-        resized_raster[0:raster_img.shape[1], 0:raster_img.shape[2]] = raster_img[c+1,:,:]
-        resized_raster = np.expand_dims(resized_raster,axis=0)
-        image = np.vstack((image, resized_raster)) 
-
-    #stack dummy channels if number of channels less than 8
-    if(raster_channels < 8):
-      diff = 8 - raster_channels
-      dummy_channels = np.zeros((patch_height, patch_width), dtype=np.float32)
-      dummy_channels = np.expand_dims(dummy_channels, axis=0)
-      #print(dummy_channels.shape)
-      for i in range(diff-1):
-        dummy_channel = np.zeros((patch_height, patch_width), dtype=np.float32)
-        dummy_channel = np.expand_dims(dummy_channel, axis=0)
-        dummy_channels = np.vstack((dummy_channel, dummy_channels))
-        #print("dummy_channel=", dummy_channel.shape,"dummy_channels=", dummy_channels.shape)
-      image = np.vstack((image, dummy_channels))
-      #print("image", image.shape)
-
-    rgb_image = image.transpose(1,2,0)         
-    if(raster_channels == 8):
-      rgb_image = np.dstack((image[4,:,:], image[2,:,:], image[1,:,:]))
-    elif(raster_channels == 4):
-      rgb_image = np.dstack((image[2,:,:], image[1,:,:], image[0,:,:]))
-    min = np.min(rgb_image)
-    max = np.max(rgb_image)
-    #before normalisation, the image should be brought into a 0 - 1 range (standardisation)
-    rgb_image = (rgb_image - min) / (max - min)
-    if self.transforms is not None:
-      rgb_image = self.transforms(rgb_image)
-
     #mask
     json_list = self.json_frame.values.tolist()
     json_name = json_list[img_id-1][0]
@@ -328,28 +303,61 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     if(IsLandfill):
       fp_mask = sol.vector.mask.footprint_mask(df=os.path.join(json_path, json_name), 
                                                reference_im=os.path.join(train_path, img_name))
-      fp_mask = fp_mask.astype('float32')
+      fp_mask = fp_mask.astype('uint8')
     else:
-      fp_mask = np.zeros((patch_height, patch_width), dtype=np.float32)
+      fp_mask = np.zeros((patch_height, patch_width), dtype=np.uint8)
+
+    rgb_image = raster_img.transpose(1,2,0)         
+    if(raster_channels == 8):
+      rgb_image = np.dstack((raster_img[4,:,:], 
+                             raster_img[2,:,:], 
+                             raster_img[1,:,:]))
+    elif(raster_channels == 4):
+      rgb_image = np.dstack((raster_img[2,:,:], 
+                             raster_img[1,:,:], 
+                             raster_img[0,:,:]))
+      
+
+    min = np.min(rgb_image)
+    max = np.max(rgb_image)
+    #before normalisation, the image should be brought into a 0 - 1 range (standardisation)
+    rgb_image = ((rgb_image - min) / (max - min)).astype('uint8')
     
+    #print(image.shape, fp_mask.shape)
+    rgb_image, fp_mask = self.transform(rgb_image, fp_mask)
+
+    rgb_image_resized = rgb_image.detach().numpy()
+    #in case the image is smaller than 512x512
+    if((rgb_image.shape[1] < patch_height) or (rgb_image.shape[2] < patch_width)):
+      rgb_image_resized = np.zeros((patch_height, patch_width), dtype=np.uint8)
+      rgb_image_resized[0:rgb_image.shape[1], 0:rgb_image.shape[2]] = rgb_image[0,:,:]
+      rgb_image_resized = np.expand_dims(rgb_image_resized, axis=0)
+      for c in range(rgb_image.shape[0]-1):
+        resized_raster = np.zeros((patch_height, patch_width), dtype=np.uint8)
+        resized_raster[0:rgb_image.shape[1], 0:rgb_image.shape[2]] = rgb_image[c+1,:,:]
+        resized_raster = np.expand_dims(resized_raster,axis=0)
+        rgb_image_resized = np.vstack((rgb_image_resized, resized_raster)) 
+
+    #rgb_image_resized = rgb_image_resized.astype('uint8')
     #create another mask variable
     mask = fp_mask
+    mask = mask.detach().numpy().squeeze()
     #in case the mask size is smaller than 512x512
-    if((fp_mask.shape[0] < patch_height) or (fp_mask.shape[1] < patch_width)):
-      mask = np.zeros((patch_height, patch_width), dtype=np.float32)
-      mask[0:fp_mask.shape[0], 0:fp_mask.shape[1]] = fp_mask
+    if((fp_mask.shape[1] < patch_height) or (fp_mask.shape[2] < patch_width)):
+      mask = np.zeros((patch_height, patch_width), dtype=np.int8)
+      mask[0:fp_mask.shape[1], 0:fp_mask.shape[2]] = fp_mask
+    #print(mask.shape)
     #one hot encoding of the mask depending on the number of classes
     mask_hotEnc = torch.zeros(self.num_classes, patch_height, patch_width)
     for n in range(self.num_classes):
       mask_hotEnc[n][mask==n] = 1
-      
-    #mask = np.expand_dims(mask, axis=0)
-    #print("image shape:",image.shape," mask shape:", mask.shape)
-    #print("transformed image shape:", rgb_image.shape, " transformed mask shape:", mask.shape)
+
+    rgb_image_resized = rgb_image_resized.astype('float32')
+    mask = mask.astype('float32')
+    mask_hotEnc = mask_hotEnc.detach().numpy().astype('float32')
 
     img_info = {}
-    img_info["RGBimage"] = rgb_image
-    img_info["image"] = image
+    img_info["RGBimage"] = rgb_image_resized
     img_info["mask"] = mask
     img_info["maskHotEnc"] = mask_hotEnc
     img_info["channels"] = raster_channels
@@ -361,8 +369,8 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 """Create respective train and test datasets and create a dataloader"""
 
 #train_idx and test_idx are dataframes
-train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), transforms=train_transforms)                               
-test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), transforms=test_transforms)                                
+train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), transforms=None)                               
+test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), transforms=None)                                
 
 #data loader
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
@@ -384,14 +392,14 @@ print("length of test loader:", len(test_loader))
 
 img_info = next(iter(train_loader))
 
-image = img_info['image']
 rgb_img = img_info['RGBimage']
 mask = img_info['mask']
 mask_hotEnc = img_info['maskHotEnc']
 channels = img_info['channels']
 
-print("image shape:", image.shape, "image mask:", mask.shape, "channels:", channels)
+print("image mask:", mask.shape, "channels:", channels)
 print("transformed image shape:", rgb_img.shape, "hot encoded mask:", mask_hotEnc.shape)
+print("image dtype:", rgb_img.dtype, " mask dtype:", mask.dtype, " hot encoded dtype:", mask_hotEnc.dtype)
 #check the min and max values of the image and mask to check if it is standardised and normalised
 rgbArr = rgb_img[0].detach().numpy()
 maskArr = mask_hotEnc[0].detach().numpy()
@@ -400,13 +408,12 @@ print("Min value of mask:", np.min(maskArr), " Max value of mask:", np.max(maskA
 
 test_info = next(iter(test_loader))
 
-image = img_info['image']
 rgb_img = img_info['RGBimage']
 mask = img_info['mask']
 mask_hotEnc = img_info['maskHotEnc']
 channels = img_info['channels']
 
-print("image shape:", image.shape, "image mask:", mask.shape, "channels:", channels)
+print("image mask:", mask.shape, "channels:", channels)
 print("transformed image shape:", rgb_img.shape, "hot encoded mask:", mask_hotEnc.shape)
 #check the min and max values of the image and mask to check if it is standardised and normalised
 rgbArr = rgb_img[0].detach().numpy()
@@ -414,49 +421,15 @@ maskArr = mask_hotEnc[0].detach().numpy()
 print("Min value of image:", np.min(rgbArr), " Max value of image:", np.max(rgbArr))
 print("Min value of mask:", np.min(maskArr), " Max value of mask:", np.max(maskArr))
 
-"""Display the images from the train set"""
-
-fig = plt.figure(figsize=(width, height))
-
-for idx in np.arange(batch_size):
-  #plt.subplot(2, 3, idx+1)
-  channels = img_info["channels"][idx].item() 
-  name = img_info["name"][idx]
-  image = img_info["image"][idx].numpy()
-  #false color composite visualisation
-  if(channels == 8):
-    rgb = (4,2,1)             #R, G, B bands
-  elif(channels == 4):
-    rgb = (2,1,0)             #R, G, B bands
-  ep.plot_rgb(image, rgb=rgb, stretch=True, title=name)
-  plt.show()
-
-fig = plt.figure(figsize=(width, height))
-#the distorted images are due to normalisation
-for idx in np.arange(batch_size):
-  plt.subplot(2, 1, idx+1)
-  channels = img_info["channels"][idx].item() 
-  name = img_info["name"][idx]
-  image = img_info["RGBimage"][idx].numpy()
-  image = image.transpose(1,2,0)
-  plt.imshow((image).astype(np.uint8))
-  plt.title(name)
-
 """Draw polygon on image:
 
 """
 
+count = 0
+fig, axs = plt.subplots(batch_size, 5, figsize = (15, 15))
+
 json_frame = pd.read_csv(train_labels, usecols=["json index"])
 json_list = json_frame.values.tolist()
-
-for idx in np.arange(batch_size):
-  id = img_info["image_id"][idx].item()
-  json_name = json_list[id-1][0]
-  print(json_name)
-  gdf = gpd.read_file(os.path.join(json_path, json_name))
-
-count = 0
-fig, axs = plt.subplots(batch_size, 3, figsize = (20, 20))
 
 for idx in np.arange(batch_size):
   id = img_info["image_id"][idx].item()
@@ -465,9 +438,15 @@ for idx in np.arange(batch_size):
   name = img_info["name"][idx]
   #print(name)
   channels = img_info["channels"][idx].item()  
-  image = im_convert(name, channels)
+  #image = im_convert(name, channels)
+  image = img_info["RGBimage"][idx].detach().numpy()
+  image = image.transpose(1,2,0)
+  image = image.astype('uint8')
   mask = img_info["mask"][idx].detach().numpy()
-  #print(mask.shape)
+  maskHotEnc = img_info["maskHotEnc"][idx].detach().numpy()
+  #print(maskHotEnc.shape)
+  maskHotEnc_split = np.vsplit(maskHotEnc, 2)
+  print(maskHotEnc_split[0].shape)
   axs[count][0].title.set_text(name)
   axs[count][0].imshow(image)
 
@@ -477,6 +456,57 @@ for idx in np.arange(batch_size):
   axs[count][2].title.set_text(name+" with mask")
   axs[count][2].imshow(image)
   axs[count][2].imshow(mask, cmap='ocean', alpha=0.4)
+
+  axs[count][3].title.set_text('Mask Split 1')
+  axs[count][3].imshow(maskHotEnc_split[0].transpose(1,2,0).squeeze(), cmap='gray')
+
+  axs[count][4].title.set_text('Mask Split 2')
+  axs[count][4].imshow(maskHotEnc_split[1].transpose(1,2,0).squeeze(), cmap='gray')
+
+
+  count += 1
+
+fig.tight_layout()
+
+"""Plot test loader images and masks"""
+
+count = 0
+fig, axs = plt.subplots(batch_size, 5, figsize = (15, 15))
+
+
+for idx in np.arange(batch_size):
+  id = test_info["image_id"][idx].item()
+  #print(id)
+  json_name = json_list[id-1][0]
+  name = test_info["name"][idx]
+  #print(name)
+  channels = test_info["channels"][idx].item()  
+  #image = im_convert(name, channels)
+  image = test_info["RGBimage"][idx].detach().numpy()
+  image = image.transpose(1,2,0)
+  image = image.astype('uint8')
+  mask = test_info["mask"][idx].detach().numpy()
+  maskHotEnc = test_info["maskHotEnc"][idx].detach().numpy()
+  #print(maskHotEnc.shape)
+  maskHotEnc_split = np.vsplit(maskHotEnc, 2)
+  print(maskHotEnc_split[0].shape)
+  axs[count][0].title.set_text(name)
+  axs[count][0].imshow(image)
+
+  axs[count][1].title.set_text('Mask')
+  axs[count][1].imshow(mask, cmap='gray')
+
+  axs[count][2].title.set_text(name+" with mask")
+  axs[count][2].imshow(image)
+  axs[count][2].imshow(mask, cmap='ocean', alpha=0.4)
+
+  axs[count][3].title.set_text('Mask Split 1')
+  axs[count][3].imshow(maskHotEnc_split[0].transpose(1,2,0).squeeze(), cmap='gray')
+
+  axs[count][4].title.set_text('Mask Split 2')
+  axs[count][4].imshow(maskHotEnc_split[1].transpose(1,2,0).squeeze(), cmap='gray')
+
+
   count += 1
 
 fig.tight_layout()
@@ -493,7 +523,7 @@ FCN encoder
 """
 
 pretrained = True
-enc_model = 'vgg13'
+enc_model = 'vgg16'
 
 maxpool_ranges = {
     'vgg11': ((0, 3), (3, 6),  (6, 11),  (11, 16), (16, 21)),
@@ -518,13 +548,13 @@ class VGGNet():
   def __init__(self, pretrained=pretrained, enc_model=enc_model, requires_grad=True, remove_fc=True):
     self.model = load_model(enc_model)
     self.model = self.model.to(device)
-    #super().__init__(load_model(enc_model))
+
     self.maxpool_ranges = maxpool_ranges[enc_model]
     #use this piece of code to freeze and unfreeze layers for training
     cnt = 0
     for child in self.model.children():
         for name, param in child.named_parameters():
-          if cnt < 4:
+          if cnt < 16:
             #print(name)
             param.requires_grad = False
           cnt += 1
@@ -607,7 +637,6 @@ FCN_model = FCN_model.to(device)
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogits()
 optimizer = optim.SGD(FCN_model.parameters(), lr=lr, momentum=momentum)     #, momentum=momentum
-#scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)  # decay LR by a factor of 0.5 every 30 epochs
 
 def modelPath(enc_model=enc_model):
   if(enc_model == 'vgg11'):
@@ -644,20 +673,23 @@ def TrainFunction():
     for batch, img_info in enumerate(train_loader):
       rgb_img = img_info['RGBimage']
       mask_hotEnc = img_info['maskHotEnc']
+      target = img_info['mask']
       rgb_img = rgb_img.to(device)
       mask_hotEnc = mask_hotEnc.to(device)
+      target = target.to(device)
       outputs = FCN_model(rgb_img)
       loss = criterion(outputs, mask_hotEnc)
-      train_loss += loss.item()*rgb_img.size(0)
+      train_loss += loss.item()
       optimizer.zero_grad()
       loss.backward()
       optimizer.step()
 
       #accuracy
       _, predicted = torch.max(outputs, 1)
-      total_train += mask_hotEnc.nelement()
-      for p, m in zip(predicted, mask_hotEnc):
+      total_train += target.nelement()
+      for p, m in zip(predicted, target):
         correct_train += (p == m).sum()
+        #print(correct_train)
       
       #print("epoch: {}/{}, batch: {}".format(epoch, epochs, batch))
     training_accuracy = 100* (correct_train / total_train)
@@ -689,7 +721,7 @@ def ValFunction(epoch):
     target = target.to(device)
     outputs = FCN_model(rgb_img)
     loss = criterion(outputs, mask_hotEnc)
-    val_loss += loss.item()*rgb_img.size(0)
+    val_loss += loss.item()
     #outputs = outputs.data.cpu().numpy()
     #batchSize, _, h, w = outputs.shape
     #predict = outputs.transpose(0, 2, 3, 1).reshape(-1, num_classes).argmax(axis=1).reshape(batchSize, h, w)  
@@ -697,7 +729,7 @@ def ValFunction(epoch):
     #determine performance metrics
 
     _, predicted = torch.max(outputs, 1)
-    total_val += mask_hotEnc.nelement()
+    total_val += target.nelement()
     for p, t in zip(predicted, target):
       correct_val += (p == t).sum()
 

@@ -36,6 +36,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
 from sklearn.utils import resample
 import matplotlib.pyplot as plt
 
@@ -325,8 +326,8 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     
     #print(image.shape, fp_mask.shape)
     rgb_image, fp_mask = self.transform(rgb_image, fp_mask)
-
     rgb_image_resized = rgb_image.detach().numpy()
+
     #in case the image is smaller than 512x512
     if((rgb_image.shape[1] < patch_height) or (rgb_image.shape[2] < patch_width)):
       rgb_image_resized = np.zeros((patch_height, patch_width), dtype=np.uint8)
@@ -340,13 +341,14 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 
     #rgb_image_resized = rgb_image_resized.astype('uint8')
     #create another mask variable
+
     mask = fp_mask
     mask = mask.detach().numpy().squeeze()
+
     #in case the mask size is smaller than 512x512
     if((fp_mask.shape[1] < patch_height) or (fp_mask.shape[2] < patch_width)):
       mask = np.zeros((patch_height, patch_width), dtype=np.int8)
       mask[0:fp_mask.shape[1], 0:fp_mask.shape[2]] = fp_mask
-    #print(mask.shape)
     #one hot encoding of the mask depending on the number of classes
     mask_hotEnc = torch.zeros(self.num_classes, patch_height, patch_width)
     for n in range(self.num_classes):
@@ -554,7 +556,7 @@ class VGGNet():
     cnt = 0
     for child in self.model.children():
         for name, param in child.named_parameters():
-          if cnt < 16:
+          if cnt < 9:
             #print(name)
             param.requires_grad = False
           cnt += 1
@@ -689,10 +691,9 @@ def TrainFunction():
       total_train += target.nelement()
       for p, m in zip(predicted, target):
         correct_train += (p == m).sum()
-        #print(correct_train)
-      
-      #print("epoch: {}/{}, batch: {}".format(epoch, epochs, batch))
-    training_accuracy = 100* (correct_train / total_train)
+
+    print(total_train)
+    training_accuracy = 100*(correct_train / total_train)
     train_loss = train_loss/len(train_loader)
     train_losses.append(train_loss)
     accuracy.append(training_accuracy.item())
@@ -708,11 +709,11 @@ def ValFunction(epoch):
   FCN_model.eval()
   total_ious = []
   pixel_accs = []
+  total_val = 0.0
+  correct_val = 0.0
+  val_accuracy = 0.0
+  val_loss = 0.0
   for batch, img_info in enumerate(test_loader):
-    val_loss = 0.0
-    total_val = 0.0
-    correct_val = 0.0
-    val_accuracy = 0.0
     rgb_img = img_info['RGBimage']
     mask_hotEnc = img_info['maskHotEnc']
     target = img_info['mask']
@@ -722,41 +723,21 @@ def ValFunction(epoch):
     outputs = FCN_model(rgb_img)
     loss = criterion(outputs, mask_hotEnc)
     val_loss += loss.item()
-    #outputs = outputs.data.cpu().numpy()
-    #batchSize, _, h, w = outputs.shape
-    #predict = outputs.transpose(0, 2, 3, 1).reshape(-1, num_classes).argmax(axis=1).reshape(batchSize, h, w)  
-    #print(predict.shape)
     #determine performance metrics
 
     _, predicted = torch.max(outputs, 1)
     total_val += target.nelement()
     for p, t in zip(predicted, target):
       correct_val += (p == t).sum()
-
-    for p, t in zip(predicted, target):
-      total_ious.append(iou(p, t))
-      #pixel_accs.append(pixel_accuracy(p, t))
-
-  #calculating average IOUs
-  #print(batch, predict.shape)
-  total_ious = np.array(total_ious).T  # n_class * val_len
-  #ious = np.nanmean(total_ious, axis=1)
-  #print(type(ious))
-  pixel_accs = np.array(pixel_accs).mean()
+  print(total_val)  
   val_accuracy = 100 * (correct_val / total_val)
   val_loss = val_loss/len(test_loader)
   print("epoch: {}/{}, validation loss: {}, validation accuracy: {}".format(epoch, 
                                                                             epochs, 
                                                                             val_loss,
                                                                             val_accuracy))
-  #ious_.append(ious)
-  #ious_mean.append(np.nanmean(ious))
   pixelAccs_mean.append(val_accuracy)
-  #IU_scores[epoch] = ious
   val_losses.append(val_loss)
-  #np.save(os.path.join(score_dir, "meanIU"), IU_scores)
-  pixel_scores[epoch] = pixel_accs
-  np.save(os.path.join(score_dir, "meanPixel"), pixel_scores)
 
 """Common semantic segmentation performance metrics"""
 

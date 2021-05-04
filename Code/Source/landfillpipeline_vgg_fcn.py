@@ -140,11 +140,10 @@ ExtractFiles(JSON_file_path , out_path)
 """Extracting the pansharpened dataset\
 Run this cell if working with pansharpened dataset
 
-""
-  #extract pansharpened images
-  ExtractFiles(PanSharpened_TIF_file_path , out_path)
-  #extract multispectral json files
-  ExtractFiles(PanSharpened_JSON_file_path , out_path)
+#extract pansharpened images
+ExtractFiles(PanSharpened_TIF_file_path , out_path)
+#extract multispectral json files
+ExtractFiles(PanSharpened_JSON_file_path , out_path)
 """
 
 def im_convert(image_name, channels):
@@ -219,18 +218,17 @@ We will use random over-sampling as we have a small set of data - TBD
 """Stratified and random split into train, test and validation datasets"""
 
 train_ratio = 0.70
-test_ratio = 0.30
-#validation_ratio = 0.10
+test_ratio = 0.20
+validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
 
-"""
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-"""
+
 
 
 print("Train size is {}, test size is {}".format(len(train_idx), len(test_idx)))
@@ -240,14 +238,14 @@ print("Train data class proportions:", get_class_proportion(train_idx))
 print("Test data class proportions:", get_class_proportion(test_idx))
 
 #parameters
-batch_size = 2
+batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
 epochs = 50
-lr = 1e-3
+lr = 1e-4
 w_decay = 1e-5
 momentum = 0.9
-step_size = 20
+step_size = 50
 gamma = 0.5
 image_size = 512
 patch_width = 512
@@ -265,7 +263,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 
   def transform(self, image, mask):
     #convert image and mask to PIL Images
-    image = TF.to_pil_image(image)
+    image = Image.fromarray(image, "RGB")
     mask = TF.to_pil_image(mask)
 
     #random horizontal flip
@@ -283,14 +281,18 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     mask = TF.rotate(mask, angle=10.0)
 
     #Gaussian Blur
-    #image = TF.gaussian_blur(image, kernel_size=(3,3))
+    image = TF.gaussian_blur(image, kernel_size=(3,3))
 
     #convert PIL image and mask to tensor before returning
     image = TF.to_tensor(image)
     mask = TF.to_tensor(mask)
 
     #normalise the image as per mean and std dev
+    #for ImageNet pre-trained
     image = TF.normalize(image, mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
+    #for solaris pre-trained
+    #image = TF.normalize(image, mean=[0.006479, 0.009328, 0.01123],
+    #                            std=[0.004986, 0.004964, 0.004950])
 
     return image, mask
 
@@ -333,7 +335,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     min = np.min(rgb_image)
     max = np.max(rgb_image)
     #before normalisation, the image should be brought into a 0 - 1 range (standardisation)
-    rgb_image = ((rgb_image - min) / (max - min)).astype('uint8')
+    #rgb_image = ((rgb_image - min) / (max - min))       #.astype('uint8')
     
     #print(image.shape, fp_mask.shape)
     rgb_image, fp_mask = self.transform(rgb_image, fp_mask)
@@ -463,7 +465,7 @@ for idx in np.arange(batch_size):
   maskHotEnc = img_info["maskHotEnc"][idx].detach().numpy()
   #print(maskHotEnc.shape)
   maskHotEnc_split = np.vsplit(maskHotEnc, 2)
-  print(maskHotEnc_split[0].shape)
+  #print(maskHotEnc_split[0].shape)
   axs[count][0].title.set_text(name)
   axs[count][0].imshow(image)
 
@@ -540,6 +542,7 @@ FCN encoder
 pretrained = False
 remove_fc = False
 pretrained_model_path ='./PreTrainedModels/xdxd_spacenet4_solaris_weights.pth'
+fcn_pretrained_model = './Solaris_vgg16.pth'
 enc_model = 'SolarisPreTrained'
 
 maxpool_ranges = {
@@ -556,10 +559,12 @@ def load_model(enc_model=enc_model):
   if enc_model == 'vgg13':
     model = models.vgg13(pretrained=pretrained)
   if enc_model == 'vgg16':
+    print('---loading vgg16----')
     model = models.vgg16(pretrained=pretrained)
   if enc_model == 'vgg19':
     model = models.vgg19(pretrained=pretrained)
-  if enc_model == 'SolarisPreTrained':   
+  if enc_model == 'SolarisPreTrained':
+    print('---loading solaris pretrained---')   
     model = models.vgg16(pretrained=pretrained)
     del model.avgpool
     del model.classifier
@@ -572,64 +577,35 @@ def load_model(enc_model=enc_model):
       model_dict[key] = weights
       count += 1
     model.load_state_dict(model_dict, strict=False)
-
-  print(model)
   return model
 
-class VGGNet():
-  def __init__(self, pretrained=pretrained, enc_model=enc_model, requires_grad=True, remove_fc=remove_fc):
-    self.model = load_model(enc_model)
-    self.model = self.model.to(device)
+"""FCN model with VGG encoder"""
 
+class FCN8s(nn.Module):
+  def __init__(self, pretrained=pretrained, enc_model=enc_model, requires_grad=True, remove_fc=remove_fc, num_classes=num_classes):
+    super().__init__()
+    self.num_classes = num_classes
+    self.enc_model   = load_model(enc_model)
+    self.relu    = nn.ReLU(inplace=True)
     self.maxpool_ranges = maxpool_ranges[enc_model]
-
-    #use this piece of code to freeze and unfreeze layers for training
+        #use this piece of code to freeze and unfreeze layers for training
 
     cnt = 0
-    for child in self.model.children():
+    for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 4:
+          if cnt < 9:
             #print(name)
             param.requires_grad = False
           cnt += 1
 
 
     if requires_grad == False:
-      for param in self.model.parameters():
+      for param in self.enc_model.parameters():
         param.requires_grad = False
-
     if remove_fc:
-      del self.model.avgpool
-      del self.model.classifier
-        
-    print("Params to learn:")
-    for name, param in self.model.named_parameters():
-      if param.requires_grad == True:
-        print("\t", name, "\t", param.size())
-      
-        
-
-  def forward(self, x):
-    output = {}
-    # get the output of each maxpooling layer (5 maxpool in VGG net)
-    for idx in range(len(self.maxpool_ranges)):
-        for layer in range(self.maxpool_ranges[idx][0], self.maxpool_ranges[idx][1]):
-          #print(layer)
-          x = self.model.features[layer](x)
-        output["x%d"%(idx+1)] = x
-    #print(output)
-    return output
-
-VGGOut = VGGNet(enc_model=enc_model, pretrained=pretrained)
-
-"""FCN decoder"""
-
-class FCN8s(nn.Module):
-  def __init__(self, pretrained_model=VGGOut, num_classes=num_classes):
-    super().__init__()
-    self.num_classes = num_classes
-    self.pretrained_model = pretrained_model
-    self.relu    = nn.ReLU(inplace=True)
+      del self.enc_model.avgpool
+      del self.enc_model.classifier
+      print(self.enc_model)
     self.deconv1 = nn.ConvTranspose2d(512, 512, kernel_size=3, stride=2, padding=1, dilation=1, output_padding=1)
     self.bn1     = nn.BatchNorm2d(512)
     self.deconv2 = nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, dilation=1, output_padding=1)
@@ -644,15 +620,23 @@ class FCN8s(nn.Module):
     #output = self.pretrained_model.forward()
     #print(output)
 
+  def EncoderOutput(self, x):
+    output = {}
+    for idx in range(len(self.maxpool_ranges)):
+      for layer in range(self.maxpool_ranges[idx][0], self.maxpool_ranges[idx][1]):
+         x = self.enc_model.features[layer](x)
+      output["x%d"%(idx+1)] = x
+    return output
+
   def forward(self, x):
-    output = self.pretrained_model.forward(x)
+    output = self.EncoderOutput(x)
     #print(output)
     x5 = output['x5']                                 # size=(N, 512, x.H/32, x.W/32)
-    #print(x5)
+    print(x5)
     x4 = output['x4']                                 # size=(N, 512, x.H/16, x.W/16)
-    #print(x4)
+    print(x4)
     x3 = output['x3']                                 # size=(N, 256, x.H/8,  x.W/8)
-    #print(x3)
+    print(x3)
 
     score = self.relu(self.deconv1(x5))               # size=(N, 512, x.H/16, x.W/16)
     #print(score)
@@ -666,17 +650,18 @@ class FCN8s(nn.Module):
 
     return score  # size=(N, n_class, x.H/1, x.W/1)
 
-FCN_model = FCN8s(pretrained_model=VGGOut, num_classes=num_classes)
+FCN_model = FCN8s(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc,num_classes=num_classes)
 for name, param in FCN_model.named_parameters():
-  print(name, "\t", param.size())
+  if param.requires_grad == True:
+    print(name, "\t", param.size())
 FCN_model = FCN_model.to(device)
 #out = FCN_model(rgb_img)
 
 """Loss and optimiser"""
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogits()
-optimizer = optim.SGD(FCN_model.parameters(), lr=lr, momentum=momentum)     #, momentum=momentum
-scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+optimizer = optim.Adam(FCN_model.parameters(), lr=lr)     #, momentum=momentum
+#scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 def modelPath(enc_model=enc_model):
   if(enc_model == 'vgg11'):
@@ -782,10 +767,12 @@ def TrainFunction():
         mask_hotEnc = mask_hotEnc.to(device)
         target = target.to(device)
         outputs = FCN_model(rgb_img)
+        #print(outputs)
         loss = criterion(outputs, mask_hotEnc)
         val_loss += loss.item()*rgb_img.size(0)
           
         _, predicted = torch.max(outputs, 1)
+        #print("predicted:",predicted)
         total_val += target.nelement()
         #determine performance metrics
         #a. Overall Accuracy
@@ -822,7 +809,7 @@ def TrainFunction():
                                                                                                                       np.mean(val_kappa)))
       print("Saving model----->")
       torch.save(FCN_model.state_dict(), model_path)
-    scheduler.step()
+    #scheduler.step()
   print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}, Mean Kappa Value:{}".format(np.nanmean(val_precision_mean)*100, 
                                                                                                             np.nanmean(val_recall_mean)*100, 
                                                                                                             np.nanmean(val_specificity_mean)*100,
@@ -847,7 +834,7 @@ def iou(pred, target):
   #print(ious)
   return ious
 
-def ConfusionMatrixComponents(target, pred):
+def ConfusionMatrixComponents(pred, target):
   tp = 0
   tn = 0
   fp = 0
@@ -886,11 +873,14 @@ def ConfusionMatrixComponents(target, pred):
   specificity = tn / (tn + fp)
   specificity = specificity.detach().cpu().numpy()
 
-  observed_agg = (tp+tn)
-  expected_agg = (((tn+fn)*(tn+fp))+((fp+tp)*(fn+tp)))/(tp+fp+tn+fn)
-  kappa = (observed_agg - expected_agg)/((tp+fp+tn+fn)-expected_agg)
+  total_obs = (tp+fp+tn+fn)
+  observed_agg = (tp+tn)/total_obs
+  correct_obs = ((tp+fp)*(tp+fn))/total_obs
+  incorrect_obs = ((tn+fn)*(tn+fp))/total_obs
+  expected_agg = correct_obs + incorrect_obs
+  kappa = (observed_agg - expected_agg)/(1-expected_agg)
   kappa = kappa.detach().cpu().numpy()
-  #print(precision, recall, specificity)
+  #print(precision, recall, specificity, kappa)
   return precision, recall, specificity, kappa
 
 TrainFunction()

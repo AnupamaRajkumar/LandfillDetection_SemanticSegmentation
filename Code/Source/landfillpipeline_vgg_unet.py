@@ -217,17 +217,17 @@ We will use random over-sampling as we have a small set of data - TBD
 """Stratified and random split into train, test and validation datasets"""
 
 train_ratio = 0.70
-test_ratio = 0.30
-#validation_ratio = 0.10
+test_ratio = 0.20
+validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
-"""
+
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-"""
+
 
 
 
@@ -241,11 +241,11 @@ print("Test data class proportions:", get_class_proportion(test_idx))
 batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 20
-lr = 1e-4
+epochs = 40
+lr = 1e-3
 w_decay = 1e-5
 momentum = 0.9
-step_size = 50
+step_size = 10
 gamma = 0.5
 image_size = 512
 patch_width = 512
@@ -555,11 +555,11 @@ pretrained_model_path ='./PreTrainedModels/xdxd_spacenet4_solaris_weights.pth'
 enc_model = 'SolarisPreTrained'
 
 maxpool_ranges = {
-    'vgg11'             : ((0, 21)),
-    'vgg13'             : ((0, 25)),
-    'vgg16'             : ((0, 31)),        #((0, 5), (5, 10), (10, 17), (17, 24), (24, 31))
-    'SolarisPreTrained' : ((0, 31)),
-    'vgg19'             : ((0, 37))
+    'vgg11'             : ((0, 3), (3, 6),  (6, 11),  (11, 16), (16, 21)),
+    'vgg13'             : ((0, 5), (5, 10), (10, 15), (15, 20), (20, 25)),
+    'vgg16'             : ((0, 5), (5, 10), (10, 17), (17, 24), (24, 30)),
+    'SolarisPreTrained' : ((0, 5), (5, 10), (10, 17), (17, 24), (24, 30)),
+    'vgg19'             : ((0, 5), (5, 10), (10, 19), (19, 28), (28, 37))
 }
 
 encoder_copy_crop = {
@@ -569,7 +569,7 @@ encoder_copy_crop = {
 }
 
 decoder_dimension = {
-    'decoder1'    :   ((128, 64), (256, 128), (512, 256), (512, 512), (1024, 512))
+    'decoder1'    :   ((128, 64), (256, 128), (512, 256), (512, 256), (512, 256))
 }
 
 def load_model(enc_model=enc_model):
@@ -602,8 +602,10 @@ class DecoderBlock(nn.Module):
   def __init__(self, in_ch, out_ch):
     super().__init__()
     self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1)
-    self.relu = nn.ReLU()
+    nn.init.kaiming_normal_(self.conv1.weight, mode='fan_in')
     self.conv2 = nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1)
+    nn.init.kaiming_normal_(self.conv2.weight, mode='fan_in')
+    self.relu = nn.ReLU()
   
   def forward(self, x):
     return self.relu(self.conv2(self.relu(self.conv1(x))))
@@ -620,17 +622,16 @@ class UNet(nn.Module):
     #encoder
     self.enc_model = load_model(enc_model=enc_model)
     self.relu = nn.ReLU()
-    self.sigmoid = nn.Sigmoid()
-    #use this piece of code to freeze and unfreeze layers for training
 
+    #use this piece of code to freeze and unfreeze layers for training
+    """
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 4:
+          if cnt < 9:
             param.requires_grad = False
           cnt += 1
-
-
+    """
     if requires_grad ==  False:
       for param in self.enc_model.parameters():
         param.requires_grad = False
@@ -642,31 +643,37 @@ class UNet(nn.Module):
     print("******************encoder model************")
     print(self.enc_model)
     #center
-    self.center_conv1 = nn.Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
-    self.center_conv2 = nn.Conv2d(1024, 1024, kernel_size=3, stride=1, padding=1)
+    self.center_conv1 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
+    nn.init.kaiming_normal_(self.center_conv1.weight, mode='fan_in')
+    self.center_conv2 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
+    nn.init.kaiming_normal_(self.center_conv2.weight, mode='fan_in')
     #decoder
-    self.up_conv5 = nn.ConvTranspose2d(self.decoder[4][0], self.decoder[4][1], 
+    self.up_conv5 = nn.ConvTranspose2d(512, 256, 
                                        kernel_size=3, stride=2, padding=1, 
                                        dilation=1, output_padding=1)
-    self.dec5 = DecoderBlock(self.decoder[4][0], self.decoder[4][1])
-    self.up_conv4 = nn.ConvTranspose2d(self.decoder[3][0], self.decoder[3][1],    
+    self.dec5 = DecoderBlock(256+512, 512)
+
+    self.up_conv4 = nn.ConvTranspose2d(512, 256,    
                                        kernel_size=3, stride=2, padding=1, 
                                        dilation=1, output_padding=1)
-    self.dec4 = DecoderBlock(self.decoder[4][0], self.decoder[4][1])              #1024, 512
-    self.up_conv3 = nn.ConvTranspose2d(self.decoder[2][0], self.decoder[2][1], 
+    self.dec4 = DecoderBlock(256+512, 512)              
+
+    self.up_conv3 = nn.ConvTranspose2d(512, 256, 
                                        kernel_size=3, stride=2, padding=1, 
                                        dilation=1, output_padding=1)
-    self.dec3 = DecoderBlock(self.decoder[2][0], self.decoder[2][1])
-    self.up_conv2 = nn.ConvTranspose2d(self.decoder[1][0], self.decoder[1][1], 
+    self.dec3 = DecoderBlock(256+256, 256)
+
+    self.up_conv2 = nn.ConvTranspose2d(256, 128, 
                                        kernel_size=3, stride=2, padding=1, 
                                        dilation=1, output_padding=1)
-    self.dec2 = DecoderBlock(self.decoder[1][0], self.decoder[1][1])
-    self.up_conv1 = nn.ConvTranspose2d(self.decoder[0][0], self.decoder[0][1], 
+    self.dec2 = DecoderBlock(128+128, 128)
+
+    self.up_conv1 = nn.ConvTranspose2d(128, 64, 
                                        kernel_size=3, stride=2, padding=1, 
                                        dilation=1, output_padding=1)
-    self.dec1 = DecoderBlock(self.decoder[0][0], self.decoder[0][1])
+    self.dec1 = DecoderBlock(64+64, 64)
     #final layer
-    self.final = nn.Conv2d(self.decoder[0][1], num_classes, kernel_size=1)
+    self.final = nn.Conv2d(64, num_classes, kernel_size=1)
 
 
   def encoder_cpycrop(self, x):
@@ -679,36 +686,40 @@ class UNet(nn.Module):
 
   def encoder_output(self, x):
     output = {}
-    #for idx in range(len(self.maxpool_ranges)):
-    idx = 0
-    for layer in range(self.maxpool_ranges[0], self.maxpool_ranges[1]):
-      x = self.enc_model.features[layer](x)
-    output['x%d'%(idx+1)] = x
+    for idx in range(len(self.maxpool_ranges)):
+      for layer in range(self.maxpool_ranges[idx][0], self.maxpool_ranges[idx][1]):
+         x = self.enc_model.features[layer](x)
+      output["x%d"%(idx+1)] = x
     return output
 
   def forward(self, x):
-    enc = self.enc_model.features(x)
-    #print(enc.shape)
+    #enc = self.enc_model.features(x)
+    enc = self.encoder_output(x)
     cpycrop = self.encoder_cpycrop(x)
     e1 = cpycrop['e1']
+    #print("e1:",e1.shape)
     e2 = cpycrop['e2']
+    #print("e2:",e2.shape)
     e3 = cpycrop['e3']
+    #print("e3:",e3.shape)
     e4 = cpycrop['e4']
+    #print("e4:",e4.shape)
     e5 = cpycrop['e5']
-
-    output = self.encoder_output(x)
-    #print(encoder_output)
-    x1 = output['x1']
-    #x5 = self.enc_model(x)
+    #print("e5:",e5.shape)
 
     #center
-    score = self.relu(self.center_conv2(self.relu(self.center_conv1(enc))))
+    #score = self.relu(self.center_conv2(self.relu(self.center_conv1(enc))))
+    score = enc['x5']
+    """
+    uncomment this section for adding a new encoder and decoder layer
+    #print("score:", score.shape)
     #decoder
-    score = torch.cat((self.up_conv5(score), e5), 1)
+    #score = torch.cat((self.up_conv5(score), e5), 1)
     #print("score5:",score.shape)
-    score = self.dec5(score)
+    #score = self.dec5(score)
     #print("dec5:",score.shape) 
-
+    #print("upconv shape:", self.up_conv4(score).shape)
+    """
     score = torch.cat((self.up_conv4(score), e4), 1)
     #print("score4:",score.shape)
     score = self.dec4(score)
@@ -742,8 +753,9 @@ UNet_model = UNet_model.to(device)
 """Loss and optimiser"""
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogitsLoss()
-optimizer = optim.SGD(UNet_model.parameters(), lr=lr, momentum=momentum)     #, 
-#scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+optimizer = optim.Adam(UNet_model.parameters(), lr=lr)     #momentum=momentum
+#optimizer = optim.RMSprop(UNet_model.parameters(), lr=lr, momentum=momentum)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 def modelPath(enc_model=enc_model):
   if(enc_model == 'vgg11'):
@@ -897,7 +909,7 @@ def TrainFunction():
                                                                                                                       np.mean(val_kappa)))
       print("Saving model----->")
       torch.save(UNet_model.state_dict(), model_path)
-    #scheduler.step()
+    scheduler.step()
   print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}, Mean Kappa Value:{}".format(np.nanmean(val_precision_mean)*100, 
                                                                                                             np.nanmean(val_recall_mean)*100, 
                                                                                                             np.nanmean(val_specificity_mean)*100,
@@ -949,7 +961,7 @@ def ConfusionMatrixComponents(pred, target):
   target_fn_idx = (target == 1)
   fn = pred_fn_idx[target_fn_idx].sum()
 
-  print("tp:{}, tn:{}, fp:{}, fn:{}".format(tp, tn, fp, fn))
+  #print("tp:{}, tn:{}, fp:{}, fn:{}".format(tp, tn, fp, fn))
 
   #precision 
   precision = tp / ( tp + fp )
@@ -1016,3 +1028,7 @@ PlotAccuracy(accuracy, pixelAccs_mean)
 PlotIoU(train_iou_mean, ious_mean)
 
 """We plot ROC over precision-recall becauase we have more background pixels as compared to the landfill pixels. Precision is more focussed on positive class than on the negative class and it actually measures the probablity of correct detection of positive values. ROC curve on the other hand meaures the ability to distinguish between classes and hence is a better measure for imbalanced classes"""
+
+ROC(val_specificity_mean, val_recall_mean)
+
+PrecisionRecall(val_precision_mean, val_recall_mean)

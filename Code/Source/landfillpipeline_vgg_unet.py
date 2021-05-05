@@ -27,6 +27,9 @@ Solaris installation with gdal\
 
 !pip install solaris==0.2.0
 
+!pip3 install --upgrade tensorboard
+!pip3 install pytorch-lightning
+
 #python imports
 import py7zr
 import os
@@ -55,6 +58,7 @@ from torchvision import datasets, transforms, models
 import torchvision.transforms.functional as TF
 import torch.optim as optim
 from torch.optim import lr_scheduler
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
 print('Using device:', device)
@@ -214,20 +218,23 @@ We will use random over-sampling as we have a small set of data - TBD
 
 
 
-"""Stratified and random split into train, test and validation datasets"""
+"""Stratified and random split into train, test and validation datasets\
+!!Run this only if not using k fold cross validation
+"""
 
 train_ratio = 0.70
-test_ratio = 0.20
-validation_ratio = 0.10
+test_ratio = 0.30
+#validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
 
+"""
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-
+"""
 
 
 
@@ -238,14 +245,14 @@ print("Train data class proportions:", get_class_proportion(train_idx))
 print("Test data class proportions:", get_class_proportion(test_idx))
 
 #parameters
-batch_size = 5
+batch_size = 10
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 40
+epochs = 2
 lr = 1e-3
 w_decay = 1e-5
 momentum = 0.9
-step_size = 10
+step_size = 15
 gamma = 0.5
 image_size = 512
 patch_width = 512
@@ -254,14 +261,15 @@ patch_height= 512
 """Create custom transforms to perform data augmentation in the class"""
 
 class CustomLandfillDataset(torch.utils.data.Dataset):
-  def __init__(self, data, transforms=None, num_classes=num_classes):                             #transforms
+  def __init__(self, data, dsType, transforms=None, num_classes=num_classes):                             #transforms
     self.data = data
     #self.transforms = transforms
     self.json_frame = pd.read_csv(train_labels, usecols=["json index"])
     self.isLandfillList = pd.read_csv(train_labels, usecols=["IsLandfill"]).values.tolist()
     self.num_classes = num_classes
+    self.dsType = dsType
 
-  def transform(self, image, mask):
+  def transform_train(self, image, mask):
     #convert image and mask to PIL Images
     mask = TF.to_pil_image(mask)
     image = Image.fromarray(image, "RGB")
@@ -287,9 +295,6 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #convert PIL image and mask to tensor before returning
     image = TF.to_tensor(image)
     mask = TF.to_tensor(mask)
-    imgnz = torch.count_nonzero(image > 1.)
-    masknz = torch.count_nonzero(mask)
-    #print("image:",imgnz)
     
     #normalise the image as per mean and std dev
     #for ImageNet pre-trained
@@ -297,6 +302,15 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #for solaris pre-trained
     #image = TF.normalize(image, mean=[0.006479, 0.009328, 0.01123],
     #                            std=[0.004986, 0.004964, 0.004950])
+
+    return image, mask
+
+  def transform_val(self, image, mask):
+    image = TF.to_tensor(image)
+    mask = TF.to_tensor(mask)
+
+    #normalise
+    image = TF.normalize(image, mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
 
     return image, mask
 
@@ -344,7 +358,11 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #print("raster image-before:",rgb_image)
     
     #print(image.shape, fp_mask.shape)
-    rgb_image, fp_mask = self.transform(rgb_image, fp_mask)
+    if(self.dsType == 'train'):
+      rgb_image, fp_mask = self.transform_train(rgb_image, fp_mask)
+    if(self.dsType == 'val'):
+      rgb_image, fp_mask = self.transform_train(rgb_image, fp_mask)
+
     rgb_image_resized = rgb_image.detach().numpy()
     #print("raster image-after:",rgb_image)
 
@@ -392,8 +410,8 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 """Create respective train and test datasets and create a dataloader"""
 
 #train_idx and test_idx are dataframes
-train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), transforms=None)                               
-test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), transforms=None)                                
+train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), dsType = 'train', transforms=None)                               
+test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), dsType = 'val', transforms=None)                                
 
 #data loader
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
@@ -624,14 +642,13 @@ class UNet(nn.Module):
     self.relu = nn.ReLU()
 
     #use this piece of code to freeze and unfreeze layers for training
-    """
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 9:
+          if cnt < 4:
             param.requires_grad = False
           cnt += 1
-    """
+
     if requires_grad ==  False:
       for param in self.enc_model.parameters():
         param.requires_grad = False
@@ -640,8 +657,8 @@ class UNet(nn.Module):
       del self.enc_model.avgpool
       del self.enc_model.classifier
 
-    print("******************encoder model************")
-    print(self.enc_model)
+    #print("******************encoder model************")
+    #print(self.enc_model)
     #center
     self.center_conv1 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
     nn.init.kaiming_normal_(self.center_conv1.weight, mode='fan_in')
@@ -744,16 +761,21 @@ class UNet(nn.Module):
     return score
 
 UNet_model = UNet(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc, num_classes=num_classes)
+log_file = open('./log.txt', 'a')
 for name, param in UNet_model.named_parameters():
   if param.requires_grad == True:
     print(name, "\t", param.size())
+    log_file.write('{}: {}\n'.format(name, param.size()))
 
+log_file.write(f'**************************************************************\n')
+log_file.close()
 UNet_model = UNet_model.to(device)
 
 """Loss and optimiser"""
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogitsLoss()
-optimizer = optim.Adam(UNet_model.parameters(), lr=lr)     #momentum=momentum
+optimizer = optim.SGD(UNet_model.parameters(), lr=lr, momentum=momentum)
+#optimizer = optim.Adam(UNet_model.parameters(), lr=lr, weight_decay=w_decay)     
 #optimizer = optim.RMSprop(UNet_model.parameters(), lr=lr, momentum=momentum)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
@@ -771,14 +793,16 @@ def modelPath(enc_model=enc_model):
 
   return model_path
 
-"""K-fold prep"""
+"""Training routine"""
 
 #https://github.com/pochih/FCN-pytorch/blob/8436fab3586f118eb36265dab4c5f900748bb02d/python/train.py
 model_path = modelPath(enc_model)
 score_dir = './'
 
-IU_scores    = np.zeros((epochs, num_classes))
-pixel_scores = np.zeros(epochs)
+meanPrecision = []
+meanRecall = []
+meanSpecificity = []
+meanIoU = []
 val_losses_min = []
 ious_mean = []
 train_iou_mean = []
@@ -796,7 +820,7 @@ val_losses = []
 accuracy = []
 pixelAccs_mean = []
 
-def TrainFunction():
+def TrainFunction(callbacks):
   for epoch in range(epochs):
     train_loss = 0.0
     training_accuracy = 0.0
@@ -844,7 +868,9 @@ def TrainFunction():
       total_train += target.nelement()
       for p, t in zip(predicted, target):
         correct_train += (p == t).sum()
-        train_ious.append(iou(p, t))
+        #train_ious.append(iou(p, t))
+        _, _, _, _, iou = ConfusionMatrixComponents(p, t)
+        train_ious.append(iou)
 
     #print("total_train:", total_train)
     train_ious = np.array(train_ious).T
@@ -878,14 +904,13 @@ def TrainFunction():
           correct_val += (p == t).sum()
           #ious are calculated for each class separately and then averaged over all classes
           #to provide global, mean IoU score of our semantic segmentation prediction
-          total_ious.append(iou(p, t))
-          #print("predicted 1s:", torch.count_nonzero(p==1))
-          #print("target 1s:", torch.count_nonzero(t==1))
-          precisionVal, recallVal, specificityVal, kappaVal = ConfusionMatrixComponents(p, t)
+          #total_ious.append(iou(p, t))
+          precisionVal, recallVal, specificityVal, kappaVal, iou = ConfusionMatrixComponents(p, t)
           val_precision.append(precisionVal)
           val_recall.append(recallVal)
           val_specificity.append(specificityVal)
-          val_kappa.append(kappaVal)
+          #val_kappa.append(kappaVal)
+          total_ious.append(iou)
 
       total_ious = np.array(total_ious).T
       #print(total_ious)
@@ -894,26 +919,34 @@ def TrainFunction():
       val_precision_mean.append(np.mean(val_precision))
       val_recall_mean.append(np.mean(val_recall))
       val_specificity_mean.append(np.mean(val_specificity))
-      val_kappa_mean.append(np.mean(val_kappa))
+      #val_kappa_mean.append(np.mean(val_kappa))
       val_accuracy = 100 * (correct_val / total_val)
       val_loss = val_loss/len(test_loader.sampler)
       pixelAccs_mean.append(val_accuracy)
       val_losses.append(val_loss)
+      
+      log_file = open('./log.txt', 'a')
+      log_file.write(f'Epoch: [{epoch}/{epochs}] \t Train_loss: {train_loss} \t Val_loss: {val_loss} \t Train_accuracy: {training_accuracy} \t Val_accuracy: {val_accuracy}\n')
+      log_file.write(f'Training_IoU: {trainIoU} \t Val_IoU: {iouVal} \t Val_Precision: {np.mean(val_precision)*100} \t Val_Recall: {np.mean(val_recall)*100} \t Val_Specificity: {np.mean(val_specificity)*100}\n')
+      log_file.write(f'\n')
+      log_file.close()
       print("epoch: {}/{}, Training Loss in epoch:{}, validation loss: {}, training accuracy:{}, validation accuracy: {}, time elapsed: {}".format(epoch, 
                                                                                                     epochs, train_loss, val_loss, training_accuracy, val_accuracy,
                                                                                                     time.time() - t0))
       print("Background and landfill IoUs for epoch {}/{}, Training IoU:{}, Validation IoU:{}".format(epoch, epochs, trainIoU, iouVal))
-      print("Validation Precision:{}%, Validation Recall:{}%, Validation Specificity:{}%, Validation Kappa:{}".format(np.mean(val_precision)*100, 
-                                                                                                                      np.mean(val_recall)*100, 
-                                                                                                                      np.mean(val_specificity)*100,
-                                                                                                                      np.mean(val_kappa)))
+      print("Validation Precision:{}%, Validation Recall:{}%, Validation Specificity:{}%".format(np.mean(val_precision)*100, 
+                                                                                                 np.mean(val_recall)*100, 
+                                                                                                 np.mean(val_specificity)*100))
       print("Saving model----->")
       torch.save(UNet_model.state_dict(), model_path)
     scheduler.step()
-  print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}, Mean Kappa Value:{}".format(np.nanmean(val_precision_mean)*100, 
+  log_file = open('./log.txt', 'a')
+  log_file.write(f'Mean_val_precision: {np.nanmean(val_precision_mean)*100} \t Mean_val_recall: {np.nanmean(val_recall_mean)*100} \t Mean_val_specificity: {np.nanmean(val_specificity_mean)*100}\n')
+  log_file.write(f'Mean_train_IoU: {np.nanmean(train_iou_mean)*100} \t Mean_val_IoU: {np.nanmean(ious_mean)*100}\n')
+  log_file.close()
+  print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}".format(np.nanmean(val_precision_mean)*100, 
                                                                                                             np.nanmean(val_recall_mean)*100, 
-                                                                                                            np.nanmean(val_specificity_mean)*100,
-                                                                                                            np.nanmean(val_kappa_mean)))
+                                                                                                            np.nanmean(val_specificity_mean)*100))
   #Final mean IOU, 
   print("Mean Training IOU:{}%, Mean Validation IOU:{}%:".format(np.nanmean(train_iou_mean)*100, np.nanmean(ious_mean)*100))
 
@@ -943,6 +976,7 @@ def ConfusionMatrixComponents(pred, target):
   recall = 0.0
   specificity = 0.0
   kappa = 0.0
+  IoU = 0.0
   #1 is positive class, 0 is negative class
 
   pred_tp_idx = (pred == 1)
@@ -972,6 +1006,9 @@ def ConfusionMatrixComponents(pred, target):
   #specificity
   specificity = tn / (tn + fp)
   specificity = specificity.detach().cpu().numpy()
+  #IoU
+  IoU = tp / (tp + fn + fp)
+  IoU = IoU.detach().cpu().numpy()
 
   total_obs = (tp+fp+tn+fn)
   observed_agg = (tp+tn)/total_obs
@@ -981,9 +1018,22 @@ def ConfusionMatrixComponents(pred, target):
   kappa = (observed_agg - expected_agg)/(1-expected_agg)
   kappa = kappa.detach().cpu().numpy()
   #print(precision, recall, specificity, kappa)
-  return precision, recall, specificity, kappa
+  return precision, recall, specificity, kappa, IoU
 
-TrainFunction()
+early_stop_callback = EarlyStopping(
+    monitor = 'val_loss',
+    min_delta = 0.0,
+    patience = 3,
+    verbose = False,
+    mode = 'min'
+)
+
+TrainFunction(callbacks=[early_stop_callback])
+
+"""
+print("Mean Precision:{}%, Mean Recall:{}%, Mean Specificity:{}, Mean IoU%".format(np.nanmean(meanPrecision), np.nanmean(meanRecall),
+                                                                                   np.nanmean(meanSpecificity), np.nanmean(meanIoU)))
+"""
 
 def PlotLoss(train_loss, val_loss):
   print('****Loss Plot********')
@@ -1029,6 +1079,18 @@ PlotIoU(train_iou_mean, ious_mean)
 
 """We plot ROC over precision-recall becauase we have more background pixels as compared to the landfill pixels. Precision is more focussed on positive class than on the negative class and it actually measures the probablity of correct detection of positive values. ROC curve on the other hand meaures the ability to distinguish between classes and hence is a better measure for imbalanced classes"""
 
-ROC(val_specificity_mean, val_recall_mean)
+#ROC(val_specificity_mean, val_recall_mean)
 
 PrecisionRecall(val_precision_mean, val_recall_mean)
+
+"""Add prediction logic\
+Use images from multispectral dataset for validation
+
+download the log file from colab
+"""
+
+from google.colab import files
+import glob
+
+files.download(model_path)
+files.download('./log.txt')

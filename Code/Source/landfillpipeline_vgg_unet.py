@@ -79,16 +79,18 @@ repo path : https://github.com/AnupamaRajkumar/LandfillDataset.git
 
 #All the paths related to multispectral dataset
 Multispectral_path = './Multispectral.7z'                                       #path of zip files
-TIF_file_path = './MultiSpectral/HR_TIF_Files.7z'
+TIF_file_path = './MultiSpectral/HR_TIF_Files_MultiSpectral.7z'
 JSON_file_path = './MultiSpectral/LandfillCoordPolygons.7z'
-json_path = './LandfillCoordPolygons'
-train_path = './HR_TIF_Files'
-#train_labels = './MultiSpectral/MultiSpectralData.csv'
+multispectral_json = './LandfillCoordPolygonMulti/LandfillCoordPolygons'
+multispectral_path = './MultiSpectralTIF/HR_TIF_Files'
+multispectral_labels = './MultiSpectral/MultiSpectralData.csv'
 
 #All the paths related to pansharpened datset
 Pansharpened_path = './Pansharpened.7z'
 PanSharpened_TIF_file_path = './Pansharpened/HR_TIF_Files.7z'
 PanSharpened_JSON_file_path = './Pansharpened/LandfillCoordPolygons.7z'
+pansharpened_json = './LandfillCoordPolygons'
+train_path = './HR_TIF_Files'
 train_labels = './Pansharpened/PanSharpenedData.csv'
 #Output directory path
 out_path = './'                                                                 #output path of extracted files
@@ -110,7 +112,7 @@ Multispectral dataset
 """
 
 def DownloadMultiSpectralDataset():
-  !wget https://www.dropbox.com/s/2r0b8goiytyh0fc/MultiSpectral.7z?dl=0
+  !wget https://www.dropbox.com/s/s0lrmwbzkrwllgw/MultiSpectral.7z?dl=0
   os.rename('MultiSpectral.7z?dl=0', 'Multispectral.7z')
   ExtractFiles('Multispectral.7z', out_path)
 
@@ -128,7 +130,7 @@ def DownloadPreTrainedModels():
   ExtractFiles('PreTrainedModels.7z', out_path)
 
 DownloadPanSharpenedDataset()
-#DownloadMultiSpectralDataset()
+DownloadMultiSpectralDataset()
 
 DownloadPreTrainedModels()
 
@@ -245,14 +247,14 @@ print("Train data class proportions:", get_class_proportion(train_idx))
 print("Test data class proportions:", get_class_proportion(test_idx))
 
 #parameters
-batch_size = 10
+batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 2
+epochs = 40
 lr = 1e-3
 w_decay = 1e-5
 momentum = 0.9
-step_size = 15
+step_size = 10
 gamma = 0.5
 image_size = 512
 patch_width = 512
@@ -261,13 +263,15 @@ patch_height= 512
 """Create custom transforms to perform data augmentation in the class"""
 
 class CustomLandfillDataset(torch.utils.data.Dataset):
-  def __init__(self, data, dsType, transforms=None, num_classes=num_classes):                             #transforms
+  def __init__(self, data, dsType, labelCSV, imgpath, jsonpath, transforms=None, num_classes=num_classes):       #transforms
     self.data = data
-    #self.transforms = transforms
-    self.json_frame = pd.read_csv(train_labels, usecols=["json index"])
-    self.isLandfillList = pd.read_csv(train_labels, usecols=["IsLandfill"]).values.tolist()
+    self.labelCSV = labelCSV
+    self.json_frame = pd.read_csv(self.labelCSV, usecols=["json index"])
+    self.isLandfillList = pd.read_csv(self.labelCSV, usecols=["IsLandfill"]).values.tolist()
     self.num_classes = num_classes
     self.dsType = dsType
+    self.imgpath = imgpath
+    self.jsonpath = jsonpath
 
   def transform_train(self, image, mask):
     #convert image and mask to PIL Images
@@ -323,7 +327,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #path for image
     img_name = self.data[index][1]
     #read the image to extract number of channels
-    raster_img = rasterio.open(os.path.join(train_path, img_name)).read()
+    raster_img = rasterio.open(os.path.join(self.imgpath, img_name)).read()
     #change datatype of image from uint16 to int32
     raster_img = raster_img.astype('uint8')
     #print(raster_img.shape)
@@ -333,18 +337,27 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     json_name = json_list[img_id-1][0]
     IsLandfill = self.isLandfillList[img_id-1][0]
     if(IsLandfill):
-      fp_mask = sol.vector.mask.footprint_mask(df=os.path.join(json_path, json_name), 
-                                               reference_im=os.path.join(train_path, img_name))
+      fp_mask = sol.vector.mask.footprint_mask(df=os.path.join(self.jsonpath, json_name), 
+                                               reference_im=os.path.join(self.imgpath, img_name))
       fp_mask = fp_mask.astype('uint8')
     else:
       fp_mask = np.zeros((patch_height, patch_width), dtype=np.uint8)
 
     rgb_image = raster_img.transpose(1,2,0)         
     if(raster_channels == 8):
-      rgb_image = np.dstack((raster_img[4,:,:], 
+      """
+      Worldview-3 spectral bands
+      0 - coastal blue, 1 - blue, 2 - green, 3 - yellow
+      4 - red, 5 - red edge, 6 - NIR1, 7 - NIR 2
+      """
+      rgb_image = np.dstack((raster_img[4,:,:],         
                              raster_img[2,:,:], 
                              raster_img[1,:,:]))
     elif(raster_channels == 4):
+      """
+      Geoeye-1 sepctral bands
+      0 - blue, 1 - green, 2 - red, 3 - NIR
+      """
       rgb_image = np.dstack((raster_img[2,:,:], 
                              raster_img[1,:,:], 
                              raster_img[0,:,:]))
@@ -361,7 +374,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     if(self.dsType == 'train'):
       rgb_image, fp_mask = self.transform_train(rgb_image, fp_mask)
     if(self.dsType == 'val'):
-      rgb_image, fp_mask = self.transform_train(rgb_image, fp_mask)
+      rgb_image, fp_mask = self.transform_val(rgb_image, fp_mask)
 
     rgb_image_resized = rgb_image.detach().numpy()
     #print("raster image-after:",rgb_image)
@@ -410,8 +423,10 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 """Create respective train and test datasets and create a dataloader"""
 
 #train_idx and test_idx are dataframes
-train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), dsType = 'train', transforms=None)                               
-test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), dsType = 'val', transforms=None)                                
+train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), dsType = 'train', transforms=None, 
+                                      labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)                               
+test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), dsType = 'train', transforms=None, 
+                                     labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)                                
 
 #data loader
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
@@ -642,13 +657,14 @@ class UNet(nn.Module):
     self.relu = nn.ReLU()
 
     #use this piece of code to freeze and unfreeze layers for training
+    """
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 4:
+          if cnt < 9:
             param.requires_grad = False
           cnt += 1
-
+    """
     if requires_grad ==  False:
       for param in self.enc_model.parameters():
         param.requires_grad = False
@@ -774,8 +790,8 @@ UNet_model = UNet_model.to(device)
 """Loss and optimiser"""
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogitsLoss()
-optimizer = optim.SGD(UNet_model.parameters(), lr=lr, momentum=momentum)
-#optimizer = optim.Adam(UNet_model.parameters(), lr=lr, weight_decay=w_decay)     
+#optimizer = optim.SGD(UNet_model.parameters(), lr=lr, momentum=momentum)
+optimizer = optim.Adam(UNet_model.parameters(), lr=lr, weight_decay=w_decay)     
 #optimizer = optim.RMSprop(UNet_model.parameters(), lr=lr, momentum=momentum)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
@@ -821,6 +837,8 @@ accuracy = []
 pixelAccs_mean = []
 
 def TrainFunction(callbacks):
+  val_track = float('inf')
+
   for epoch in range(epochs):
     train_loss = 0.0
     training_accuracy = 0.0
@@ -937,9 +955,13 @@ def TrainFunction(callbacks):
       print("Validation Precision:{}%, Validation Recall:{}%, Validation Specificity:{}%".format(np.mean(val_precision)*100, 
                                                                                                  np.mean(val_recall)*100, 
                                                                                                  np.mean(val_specificity)*100))
-      print("Saving model----->")
-      torch.save(UNet_model.state_dict(), model_path)
+      if(val_loss < val_track):
+        val_track = val_loss
+        print("Saving model----->")
+        torch.save(UNet_model.state_dict(), model_path)
+
     scheduler.step()
+
   log_file = open('./log.txt', 'a')
   log_file.write(f'Mean_val_precision: {np.nanmean(val_precision_mean)*100} \t Mean_val_recall: {np.nanmean(val_recall_mean)*100} \t Mean_val_specificity: {np.nanmean(val_specificity_mean)*100}\n')
   log_file.write(f'Mean_train_IoU: {np.nanmean(train_iou_mean)*100} \t Mean_val_IoU: {np.nanmean(ious_mean)*100}\n')
@@ -1030,9 +1052,10 @@ early_stop_callback = EarlyStopping(
 
 TrainFunction(callbacks=[early_stop_callback])
 
-"""
-print("Mean Precision:{}%, Mean Recall:{}%, Mean Specificity:{}, Mean IoU%".format(np.nanmean(meanPrecision), np.nanmean(meanRecall),
+"""print("Mean Precision:{}%, Mean Recall:{}%, Mean Specificity:{}, Mean IoU%".format(np.nanmean(meanPrecision), np.nanmean(meanRecall),
                                                                                    np.nanmean(meanSpecificity), np.nanmean(meanIoU)))
+
+Performance metric plots
 """
 
 def PlotLoss(train_loss, val_loss):
@@ -1081,13 +1104,88 @@ PlotIoU(train_iou_mean, ious_mean)
 
 #ROC(val_specificity_mean, val_recall_mean)
 
-PrecisionRecall(val_precision_mean, val_recall_mean)
+#PrecisionRecall(val_precision_mean, val_recall_mean)
 
 """Add prediction logic\
 Use images from multispectral dataset for validation
-
-download the log file from colab
 """
+
+#extract multispectral images
+ExtractFiles(TIF_file_path , os.path.join(out_path, 'MultiSpectralTIF'))
+#extract multispectral json files
+ExtractFiles(JSON_file_path , os.path.join(out_path, 'LandfillCoordPolygonMulti'))
+
+val_model = UNet(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc, num_classes=num_classes)
+val_model.load_state_dict(torch.load(model_path, map_location='cpu'))
+val_model.eval()
+
+valFrame = pd.read_csv(multispectral_labels, usecols=["Idx", "Image Index", "IsLandfill"])
+data = valFrame.values.tolist()
+label = pd.read_csv(multispectral_labels, usecols=["IsLandfill"])
+
+val_dataset = CustomLandfillDataset(data=data, dsType = 'val', transforms=None, labelCSV=multispectral_labels, 
+                                    imgpath=multispectral_path, jsonpath=multispectral_json)                                
+
+#data loader
+val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
+                                           batch_size=batch_size,
+                                           num_workers=num_workers,
+                                           shuffle=True)
+
+img_info = next(iter(val_loader))
+
+rgb_img = img_info['RGBimage']
+mask = img_info['mask']
+mask_hotEnc = img_info['maskHotEnc']
+channels = img_info['channels']
+
+
+rgb_img = rgb_img.to('cpu')
+output = val_model(rgb_img)
+print("output shape:",output.shape)
+_, predicted = torch.max(output, 1)
+print("predicted shape:", predicted.shape)
+
+print("********Predicted segments****************")
+count = 0
+fig, axs = plt.subplots(batch_size, 5, figsize = (15, 15))
+for idx in np.arange(batch_size):
+  id = img_info["image_id"][idx].item()
+  #print(id)
+  json_name = json_list[id-1][0]
+  name = img_info["name"][idx]
+  #print(name)
+  channels = img_info["channels"][idx].item()  
+  #image = im_convert(name, channels)
+  image = img_info["RGBimage"][idx].detach().numpy()
+  image = image.transpose(1,2,0)
+  #print(image.shape)
+  #print(image)
+  image = image.astype('uint8')
+  mask = img_info["mask"][idx].detach().numpy()
+  #print(mask.shape, predicted.shape)
+  axs[count][0].title.set_text(name)
+  axs[count][0].imshow(image)
+
+  axs[count][1].title.set_text('Mask')
+  axs[count][1].imshow(mask, cmap='gray')
+
+  axs[count][2].title.set_text(name+" with mask")
+  axs[count][2].imshow(image)
+  axs[count][2].imshow(mask, cmap='ocean', alpha=0.4)
+
+  axs[count][3].title.set_text('Predicted mask')
+  axs[count][3].imshow(predicted[idx], cmap='gray')
+
+  axs[count][4].title.set_text(name+" with predicted mask")
+  axs[count][4].imshow(image)
+  axs[count][4].imshow(predicted[idx], cmap='ocean', alpha=0.4)
+  
+  count += 1
+
+fig.tight_layout()
+
+"""download the log file from colab"""
 
 from google.colab import files
 import glob

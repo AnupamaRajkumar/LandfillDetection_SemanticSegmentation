@@ -27,6 +27,9 @@ Solaris installation with gdal\
 
 !pip install solaris==0.2.0
 
+!pip3 install --upgrade tensorboard
+!pip3 install pytorch-lightning
+
 #python imports
 import py7zr
 import os
@@ -55,6 +58,7 @@ from torchvision import datasets, transforms, models
 import torchvision.transforms.functional as TF
 import torch.optim as optim
 from torch.optim import lr_scheduler
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else "cpu")
 print('Using device:', device)
@@ -75,17 +79,19 @@ repo path : https://github.com/AnupamaRajkumar/LandfillDataset.git
 
 #All the paths related to multispectral dataset
 Multispectral_path = './Multispectral.7z'                                       #path of zip files
-TIF_file_path = './MultiSpectral/HR_TIF_Files.7z'
+TIF_file_path = './MultiSpectral/HR_TIF_Files_MultiSpectral.7z'
 JSON_file_path = './MultiSpectral/LandfillCoordPolygons.7z'
-json_path = './LandfillCoordPolygons'
-train_path = './HR_TIF_Files'
-train_labels = './MultiSpectral/MultiSpectralData.csv'
+multispectral_json = './LandfillCoordPolygonMulti/LandfillCoordPolygons'
+multispectral_path = './MultiSpectralTIF/HR_TIF_Files'
+multispectral_labels = './MultiSpectral/MultiSpectralData.csv'
 
 #All the paths related to pansharpened datset
 Pansharpened_path = './Pansharpened.7z'
 PanSharpened_TIF_file_path = './Pansharpened/HR_TIF_Files.7z'
 PanSharpened_JSON_file_path = './Pansharpened/LandfillCoordPolygons.7z'
-#train_labels = './Pansharpened/PanSharpenedData.csv'
+pansharpened_json = './LandfillCoordPolygons'
+train_path = './HR_TIF_Files'
+train_labels = './Pansharpened/PanSharpenedData.csv'
 #Output directory path
 out_path = './'                                                                 #output path of extracted files
 
@@ -106,7 +112,7 @@ Multispectral dataset
 """
 
 def DownloadMultiSpectralDataset():
-  !wget https://www.dropbox.com/s/2r0b8goiytyh0fc/MultiSpectral.7z?dl=0
+  !wget https://www.dropbox.com/s/s0lrmwbzkrwllgw/MultiSpectral.7z?dl=0
   os.rename('MultiSpectral.7z?dl=0', 'Multispectral.7z')
   ExtractFiles('Multispectral.7z', out_path)
 
@@ -123,28 +129,27 @@ def DownloadPreTrainedModels():
   os.rename('PreTrainedModels.7z?dl=0', 'PreTrainedModels.7z')
   ExtractFiles('PreTrainedModels.7z', out_path)
 
-#DownloadPanSharpenedDataset()
+DownloadPanSharpenedDataset()
 DownloadMultiSpectralDataset()
 
 DownloadPreTrainedModels()
 
 """Extracting the multispectral dataset\
 Run this cell if working with multispectral dataset
-"""
 
 #extract multispectral images
 ExtractFiles(TIF_file_path , out_path)
 #extract multispectral json files
 ExtractFiles(JSON_file_path , out_path)
 
-"""Extracting the pansharpened dataset\
+Extracting the pansharpened dataset\
 Run this cell if working with pansharpened dataset
+"""
 
 #extract pansharpened images
 ExtractFiles(PanSharpened_TIF_file_path , out_path)
 #extract multispectral json files
 ExtractFiles(PanSharpened_JSON_file_path , out_path)
-"""
 
 def im_convert(image_name, channels):
   image = rasterio.open(os.path.join(train_path, image_name)).read()
@@ -219,16 +224,16 @@ We will use random over-sampling as we have a small set of data - TBD
 
 train_ratio = 0.70
 test_ratio = 0.20
-validation_ratio = 0.10
+#validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
-
+"""
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-
+"""
 
 
 print("Train size is {}, test size is {}".format(len(train_idx), len(test_idx)))
@@ -241,11 +246,11 @@ print("Test data class proportions:", get_class_proportion(test_idx))
 batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 50
-lr = 1e-4
+epochs = 40
+lr = 1e-3
 w_decay = 1e-5
 momentum = 0.9
-step_size = 50
+step_size = 10
 gamma = 0.5
 image_size = 512
 patch_width = 512
@@ -254,17 +259,21 @@ patch_height= 512
 """Create custom transforms to perform data augmentation in the class"""
 
 class CustomLandfillDataset(torch.utils.data.Dataset):
-  def __init__(self, data, transforms=None, num_classes=num_classes):                             #transforms
+  def __init__(self, data, dsType, labelCSV, imgpath, jsonpath, transforms=None, num_classes=num_classes):       #transforms
     self.data = data
-    #self.transforms = transforms
-    self.json_frame = pd.read_csv(train_labels, usecols=["json index"])
-    self.isLandfillList = pd.read_csv(train_labels, usecols=["IsLandfill"]).values.tolist()
+    self.labelCSV = labelCSV
+    self.json_frame = pd.read_csv(self.labelCSV, usecols=["json index"])
+    self.isLandfillList = pd.read_csv(self.labelCSV, usecols=["IsLandfill"]).values.tolist()
     self.num_classes = num_classes
+    self.dsType = dsType
+    self.imgpath = imgpath
+    self.jsonpath = jsonpath
 
-  def transform(self, image, mask):
+  def transform_train(self, image, mask):
     #convert image and mask to PIL Images
-    image = Image.fromarray(image, "RGB")
     mask = TF.to_pil_image(mask)
+    image = Image.fromarray(image, "RGB")
+    #npimg = np.asarray(image)    
 
     #random horizontal flip
     if random.random() > 0.5:
@@ -282,17 +291,26 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 
     #Gaussian Blur
     image = TF.gaussian_blur(image, kernel_size=(3,3))
-
+    
     #convert PIL image and mask to tensor before returning
     image = TF.to_tensor(image)
     mask = TF.to_tensor(mask)
-
+    
     #normalise the image as per mean and std dev
     #for ImageNet pre-trained
     image = TF.normalize(image, mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
     #for solaris pre-trained
     #image = TF.normalize(image, mean=[0.006479, 0.009328, 0.01123],
     #                            std=[0.004986, 0.004964, 0.004950])
+
+    return image, mask
+
+  def transform_val(self, image, mask):
+    image = TF.to_tensor(image)
+    mask = TF.to_tensor(mask)
+
+    #normalise
+    image = TF.normalize(image, mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
 
     return image, mask
 
@@ -305,7 +323,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #path for image
     img_name = self.data[index][1]
     #read the image to extract number of channels
-    raster_img = rasterio.open(os.path.join(train_path, img_name)).read()
+    raster_img = rasterio.open(os.path.join(self.imgpath, img_name)).read()
     #change datatype of image from uint16 to int32
     raster_img = raster_img.astype('uint8')
     #print(raster_img.shape)
@@ -315,18 +333,27 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     json_name = json_list[img_id-1][0]
     IsLandfill = self.isLandfillList[img_id-1][0]
     if(IsLandfill):
-      fp_mask = sol.vector.mask.footprint_mask(df=os.path.join(json_path, json_name), 
-                                               reference_im=os.path.join(train_path, img_name))
+      fp_mask = sol.vector.mask.footprint_mask(df=os.path.join(self.jsonpath, json_name), 
+                                               reference_im=os.path.join(self.imgpath, img_name))
       fp_mask = fp_mask.astype('uint8')
     else:
       fp_mask = np.zeros((patch_height, patch_width), dtype=np.uint8)
 
     rgb_image = raster_img.transpose(1,2,0)         
     if(raster_channels == 8):
-      rgb_image = np.dstack((raster_img[4,:,:], 
+      """
+      Worldview-3 spectral bands
+      0 - coastal blue, 1 - blue, 2 - green, 3 - yellow
+      4 - red, 5 - red edge, 6 - NIR1, 7 - NIR 2
+      """
+      rgb_image = np.dstack((raster_img[4,:,:],         
                              raster_img[2,:,:], 
                              raster_img[1,:,:]))
     elif(raster_channels == 4):
+      """
+      Geoeye-1 sepctral bands
+      0 - blue, 1 - green, 2 - red, 3 - NIR
+      """
       rgb_image = np.dstack((raster_img[2,:,:], 
                              raster_img[1,:,:], 
                              raster_img[0,:,:]))
@@ -335,11 +362,18 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     min = np.min(rgb_image)
     max = np.max(rgb_image)
     #before normalisation, the image should be brought into a 0 - 1 range (standardisation)
-    #rgb_image = ((rgb_image - min) / (max - min))       #.astype('uint8')
+    #rgb_image = ((rgb_image - min) / (max - min))     #.astype('uint8')
+    rgb_image = rgb_image.astype('uint8')
+    #print("raster image-before:",rgb_image)
     
     #print(image.shape, fp_mask.shape)
-    rgb_image, fp_mask = self.transform(rgb_image, fp_mask)
+    if(self.dsType == 'train'):
+      rgb_image, fp_mask = self.transform_train(rgb_image, fp_mask)
+    if(self.dsType == 'val'):
+      rgb_image, fp_mask = self.transform_val(rgb_image, fp_mask)
+
     rgb_image_resized = rgb_image.detach().numpy()
+    #print("raster image-after:",rgb_image)
 
     #in case the image is smaller than 512x512
     if((rgb_image.shape[1] < patch_height) or (rgb_image.shape[2] < patch_width)):
@@ -367,6 +401,7 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     for n in range(self.num_classes):
       mask_hotEnc[n][mask==n] = 1
 
+    #print("resized image:",rgb_image_resized)
     rgb_image_resized = rgb_image_resized.astype('float32')
     mask = mask.astype('float32')
     mask_hotEnc = mask_hotEnc.detach().numpy().astype('float32')
@@ -384,8 +419,10 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
 """Create respective train and test datasets and create a dataloader"""
 
 #train_idx and test_idx are dataframes
-train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), transforms=None)                               
-test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), transforms=None)                                
+train_dataset = CustomLandfillDataset(data=train_idx.values.tolist(), dsType = 'train', transforms=None,
+                                      labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)                               
+test_dataset = CustomLandfillDataset(data=test_idx.values.tolist(), dsType = 'train', transforms=None,
+                                     labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)                                
 
 #data loader
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
@@ -542,7 +579,6 @@ FCN encoder
 pretrained = False
 remove_fc = False
 pretrained_model_path ='./PreTrainedModels/xdxd_spacenet4_solaris_weights.pth'
-fcn_pretrained_model = './Solaris_vgg16.pth'
 enc_model = 'SolarisPreTrained'
 
 maxpool_ranges = {
@@ -590,14 +626,15 @@ class FCN8s(nn.Module):
     self.maxpool_ranges = maxpool_ranges[enc_model]
         #use this piece of code to freeze and unfreeze layers for training
 
+    """
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 9:
+          if cnt < 4:
             #print(name)
             param.requires_grad = False
           cnt += 1
-
+    """
 
     if requires_grad == False:
       for param in self.enc_model.parameters():
@@ -605,7 +642,7 @@ class FCN8s(nn.Module):
     if remove_fc:
       del self.enc_model.avgpool
       del self.enc_model.classifier
-      print(self.enc_model)
+      #print(self.enc_model)
     self.deconv1 = nn.ConvTranspose2d(512, 512, kernel_size=3, stride=2, padding=1, dilation=1, output_padding=1)
     self.bn1     = nn.BatchNorm2d(512)
     self.deconv2 = nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, dilation=1, output_padding=1)
@@ -632,11 +669,11 @@ class FCN8s(nn.Module):
     output = self.EncoderOutput(x)
     #print(output)
     x5 = output['x5']                                 # size=(N, 512, x.H/32, x.W/32)
-    print(x5)
+    #print(x5)
     x4 = output['x4']                                 # size=(N, 512, x.H/16, x.W/16)
-    print(x4)
+    #print(x4)
     x3 = output['x3']                                 # size=(N, 256, x.H/8,  x.W/8)
-    print(x3)
+    #print(x3)
 
     score = self.relu(self.deconv1(x5))               # size=(N, 512, x.H/16, x.W/16)
     #print(score)
@@ -651,17 +688,21 @@ class FCN8s(nn.Module):
     return score  # size=(N, n_class, x.H/1, x.W/1)
 
 FCN_model = FCN8s(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc,num_classes=num_classes)
+log_file = open('./log.txt', 'a')
 for name, param in FCN_model.named_parameters():
   if param.requires_grad == True:
     print(name, "\t", param.size())
+    log_file.write('{}: {}\n'.format(name, param.size()))
+
+log_file.write(f'**************************************************************\n')
+log_file.close()
 FCN_model = FCN_model.to(device)
-#out = FCN_model(rgb_img)
 
 """Loss and optimiser"""
 
 criterion = nn.BCEWithLogitsLoss() #BCEWithLogits()
-optimizer = optim.Adam(FCN_model.parameters(), lr=lr)     #, momentum=momentum
-#scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
+optimizer = optim.Adam(FCN_model.parameters(), lr=lr, weight_decay=w_decay) 
+scheduler = lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
 def modelPath(enc_model=enc_model):
   if(enc_model == 'vgg11'):
@@ -683,8 +724,10 @@ def modelPath(enc_model=enc_model):
 model_path = modelPath(enc_model)
 score_dir = './'
 
-IU_scores    = np.zeros((epochs, num_classes))
-pixel_scores = np.zeros(epochs)
+meanPrecision = []
+meanRecall = []
+meanSpecificity = []
+meanIoU = []
 val_losses_min = []
 ious_mean = []
 train_iou_mean = []
@@ -702,7 +745,9 @@ val_losses = []
 accuracy = []
 pixelAccs_mean = []
 
-def TrainFunction():
+def TrainFunction(callbacks):
+  val_track = float('inf')
+
   for epoch in range(epochs):
     train_loss = 0.0
     training_accuracy = 0.0
@@ -729,12 +774,15 @@ def TrainFunction():
     FCN_model.train()
     for batch, img_info in enumerate(train_loader):
       rgb_img = img_info['RGBimage']
+      #print("rgb_img:",rgb_img.shape)
+      #print(rgb_img)
       mask_hotEnc = img_info['maskHotEnc']
       target = img_info['mask']
       rgb_img = rgb_img.to(device)
       mask_hotEnc = mask_hotEnc.to(device)
       target = target.to(device)
       outputs = FCN_model(rgb_img)
+      #print("outputs:",outputs)
       loss = criterion(outputs, mask_hotEnc)
       train_loss += loss.item()*rgb_img.size(0)
       optimizer.zero_grad()
@@ -743,10 +791,13 @@ def TrainFunction():
 
       #training performance metrics
       _, predicted = torch.max(outputs, 1)  
+      #print("predicted:",predicted)
       total_train += target.nelement()
       for p, t in zip(predicted, target):
         correct_train += (p == t).sum()
-        train_ious.append(iou(p, t))
+        #train_ious.append(iou(p, t))
+        _, _, _, _, iou = ConfusionMatrixComponents(p, t)
+        train_ious.append(iou)
 
     #print("total_train:", total_train)
     train_ious = np.array(train_ious).T
@@ -767,7 +818,7 @@ def TrainFunction():
         mask_hotEnc = mask_hotEnc.to(device)
         target = target.to(device)
         outputs = FCN_model(rgb_img)
-        #print(outputs)
+        #print("outputs:",outputs)
         loss = criterion(outputs, mask_hotEnc)
         val_loss += loss.item()*rgb_img.size(0)
           
@@ -780,12 +831,13 @@ def TrainFunction():
           correct_val += (p == t).sum()
           #ious are calculated for each class separately and then averaged over all classes
           #to provide global, mean IoU score of our semantic segmentation prediction
-          total_ious.append(iou(p, t))
-          precisionVal, recallVal, specificityVal, kappaVal = ConfusionMatrixComponents(p, t)
+          #total_ious.append(iou(p, t))
+          precisionVal, recallVal, specificityVal, kappaVal, iou = ConfusionMatrixComponents(p, t)
           val_precision.append(precisionVal)
           val_recall.append(recallVal)
           val_specificity.append(specificityVal)
-          val_kappa.append(kappaVal)
+          #val_kappa.append(kappaVal)
+          total_ious.append(iou)
 
       total_ious = np.array(total_ious).T
       #print(total_ious)
@@ -794,26 +846,38 @@ def TrainFunction():
       val_precision_mean.append(np.mean(val_precision))
       val_recall_mean.append(np.mean(val_recall))
       val_specificity_mean.append(np.mean(val_specificity))
-      val_kappa_mean.append(np.mean(val_kappa))
+      #val_kappa_mean.append(np.mean(val_kappa))
       val_accuracy = 100 * (correct_val / total_val)
       val_loss = val_loss/len(test_loader.sampler)
       pixelAccs_mean.append(val_accuracy)
       val_losses.append(val_loss)
+      
+      log_file = open('./log.txt', 'a')
+      log_file.write(f'Epoch: [{epoch}/{epochs}] \t Train_loss: {train_loss} \t Val_loss: {val_loss} \t Train_accuracy: {training_accuracy} \t Val_accuracy: {val_accuracy}\n')
+      log_file.write(f'Training_IoU: {trainIoU} \t Val_IoU: {iouVal} \t Val_Precision: {np.mean(val_precision)*100} \t Val_Recall: {np.mean(val_recall)*100} \t Val_Specificity: {np.mean(val_specificity)*100}\n')
+      log_file.write(f'\n')
+      log_file.close()
       print("epoch: {}/{}, Training Loss in epoch:{}, validation loss: {}, training accuracy:{}, validation accuracy: {}, time elapsed: {}".format(epoch, 
                                                                                                     epochs, train_loss, val_loss, training_accuracy, val_accuracy,
                                                                                                     time.time() - t0))
       print("Background and landfill IoUs for epoch {}/{}, Training IoU:{}, Validation IoU:{}".format(epoch, epochs, trainIoU, iouVal))
-      print("Validation Precision:{}%, Validation Recall:{}%, Validation Specificity:{}%, Validation Kappa:{}".format(np.mean(val_precision)*100, 
-                                                                                                                      np.mean(val_recall)*100, 
-                                                                                                                      np.mean(val_specificity)*100,
-                                                                                                                      np.mean(val_kappa)))
-      print("Saving model----->")
-      torch.save(FCN_model.state_dict(), model_path)
-    #scheduler.step()
-  print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}, Mean Kappa Value:{}".format(np.nanmean(val_precision_mean)*100, 
+      print("Validation Precision:{}%, Validation Recall:{}%, Validation Specificity:{}%".format(np.mean(val_precision)*100, 
+                                                                                                 np.mean(val_recall)*100, 
+                                                                                                 np.mean(val_specificity)*100))
+      if(val_loss < val_track):
+        val_track = val_loss
+        print("Saving model----->")
+        torch.save(FCN_model.state_dict(), model_path)
+
+    scheduler.step()
+
+  log_file = open('./log.txt', 'a')
+  log_file.write(f'Mean_val_precision: {np.nanmean(val_precision_mean)*100} \t Mean_val_recall: {np.nanmean(val_recall_mean)*100} \t Mean_val_specificity: {np.nanmean(val_specificity_mean)*100}\n')
+  log_file.write(f'Mean_train_IoU: {np.nanmean(train_iou_mean)*100} \t Mean_val_IoU: {np.nanmean(ious_mean)*100}\n')
+  log_file.close()
+  print("Mean Validation Precision:{}%, Mean Validation Recall:{}%, Mean Validation Specificity:{}".format(np.nanmean(val_precision_mean)*100, 
                                                                                                             np.nanmean(val_recall_mean)*100, 
-                                                                                                            np.nanmean(val_specificity_mean)*100,
-                                                                                                            np.nanmean(val_kappa_mean)))
+                                                                                                            np.nanmean(val_specificity_mean)*100))
   #Final mean IOU, 
   print("Mean Training IOU:{}%, Mean Validation IOU:{}%:".format(np.nanmean(train_iou_mean)*100, np.nanmean(ious_mean)*100))
 
@@ -843,6 +907,7 @@ def ConfusionMatrixComponents(pred, target):
   recall = 0.0
   specificity = 0.0
   kappa = 0.0
+  IoU = 0.0
   #1 is positive class, 0 is negative class
 
   pred_tp_idx = (pred == 1)
@@ -872,6 +937,9 @@ def ConfusionMatrixComponents(pred, target):
   #specificity
   specificity = tn / (tn + fp)
   specificity = specificity.detach().cpu().numpy()
+  #IoU
+  IoU = tp / (tp + fn + fp)
+  IoU = IoU.detach().cpu().numpy()
 
   total_obs = (tp+fp+tn+fn)
   observed_agg = (tp+tn)/total_obs
@@ -881,9 +949,17 @@ def ConfusionMatrixComponents(pred, target):
   kappa = (observed_agg - expected_agg)/(1-expected_agg)
   kappa = kappa.detach().cpu().numpy()
   #print(precision, recall, specificity, kappa)
-  return precision, recall, specificity, kappa
+  return precision, recall, specificity, kappa, IoU
 
-TrainFunction()
+early_stop_callback = EarlyStopping(
+    monitor = 'val_loss',
+    min_delta = 0.0,
+    patience = 3,
+    verbose = False,
+    mode = 'min'
+)
+
+TrainFunction(callbacks=[early_stop_callback])
 
 def PlotLoss(train_loss, val_loss):
   print('****Loss Plot********')
@@ -928,3 +1004,84 @@ PlotAccuracy(accuracy, pixelAccs_mean)
 PlotIoU(train_iou_mean, ious_mean)
 
 """We plot ROC over precision-recall becauase we have more background pixels as compared to the landfill pixels. Precision is more focussed on positive class than on the negative class and it actually measures the probablity of correct detection of positive values. ROC curve on the other hand meaures the ability to distinguish between classes and hence is a better measure for imbalanced classes"""
+
+#extract multispectral images
+ExtractFiles(TIF_file_path , os.path.join(out_path, 'MultiSpectralTIF'))
+#extract multispectral json files
+ExtractFiles(JSON_file_path , os.path.join(out_path, 'LandfillCoordPolygonMulti'))
+
+val_model = FCN8s(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc, num_classes=num_classes)
+val_model.load_state_dict(torch.load(model_path, map_location='cpu'))
+val_model.eval()
+
+valFrame = pd.read_csv(multispectral_labels, usecols=["Idx", "Image Index", "IsLandfill"])
+data = valFrame.values.tolist()
+label = pd.read_csv(multispectral_labels, usecols=["IsLandfill"])
+
+val_dataset = CustomLandfillDataset(data=data, dsType = 'val', transforms=None, labelCSV=multispectral_labels, 
+                                    imgpath=multispectral_path, jsonpath=multispectral_json)                                
+
+#data loader
+val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
+                                           batch_size=batch_size,
+                                           num_workers=num_workers,
+                                           shuffle=True)
+
+img_info = next(iter(val_loader))
+
+rgb_img = img_info['RGBimage']
+mask = img_info['mask']
+mask_hotEnc = img_info['maskHotEnc']
+channels = img_info['channels']
+
+
+rgb_img = rgb_img.to('cpu')
+output = val_model(rgb_img)
+print("output shape:",output.shape)
+_, predicted = torch.max(output, 1)
+print("predicted shape:", predicted.shape)
+
+print("********Predicted segments****************")
+count = 0
+fig, axs = plt.subplots(batch_size, 5, figsize = (15, 15))
+for idx in np.arange(batch_size):
+  id = img_info["image_id"][idx].item()
+  #print(id)
+  json_name = json_list[id-1][0]
+  name = img_info["name"][idx]
+  #print(name)
+  channels = img_info["channels"][idx].item()  
+  #image = im_convert(name, channels)
+  image = img_info["RGBimage"][idx].detach().numpy()
+  image = image.transpose(1,2,0)
+  #print(image.shape)
+  #print(image)
+  image = image.astype('uint8')
+  mask = img_info["mask"][idx].detach().numpy()
+  #print(mask.shape, predicted.shape)
+  axs[count][0].title.set_text(name)
+  axs[count][0].imshow(image)
+
+  axs[count][1].title.set_text('Mask')
+  axs[count][1].imshow(mask, cmap='gray')
+
+  axs[count][2].title.set_text(name+" with mask")
+  axs[count][2].imshow(image)
+  axs[count][2].imshow(mask, cmap='ocean', alpha=0.4)
+
+  axs[count][3].title.set_text('Predicted mask')
+  axs[count][3].imshow(predicted[idx], cmap='gray')
+
+  axs[count][4].title.set_text(name+" with predicted mask")
+  axs[count][4].imshow(image)
+  axs[count][4].imshow(predicted[idx], cmap='ocean', alpha=0.4)
+  
+  count += 1
+
+fig.tight_layout()
+
+from google.colab import files
+import glob
+
+files.download(model_path)
+files.download('./log.txt')

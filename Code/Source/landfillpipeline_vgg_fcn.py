@@ -125,7 +125,7 @@ def DownloadPanSharpenedDataset():
   #os.rmdir(Pansharpened_path)
 
 def DownloadPreTrainedModels():
-  !wget https://www.dropbox.com/s/aysve9jphkm5yva/PreTrainedModels.7z?dl=0
+  !wget https://www.dropbox.com/s/rh7lmxxhqn9cm2y/PreTrainedModels.7z?dl=0
   os.rename('PreTrainedModels.7z?dl=0', 'PreTrainedModels.7z')
   ExtractFiles('PreTrainedModels.7z', out_path)
 
@@ -224,16 +224,16 @@ We will use random over-sampling as we have a small set of data - TBD
 
 train_ratio = 0.70
 test_ratio = 0.20
-#validation_ratio = 0.10
+validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
-"""
+
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-"""
+
 
 
 print("Train size is {}, test size is {}".format(len(train_idx), len(test_idx)))
@@ -613,6 +613,7 @@ def load_model(enc_model=enc_model):
       model_dict[key] = weights
       count += 1
     model.load_state_dict(model_dict, strict=False)
+  print(model)
   return model
 
 """FCN model with VGG encoder"""
@@ -626,7 +627,7 @@ class FCN8s(nn.Module):
     self.maxpool_ranges = maxpool_ranges[enc_model]
         #use this piece of code to freeze and unfreeze layers for training
 
-    """
+
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
@@ -634,7 +635,7 @@ class FCN8s(nn.Module):
             #print(name)
             param.requires_grad = False
           cnt += 1
-    """
+
 
     if requires_grad == False:
       for param in self.enc_model.parameters():
@@ -676,7 +677,6 @@ class FCN8s(nn.Module):
     #print(x3)
 
     score = self.relu(self.deconv1(x5))               # size=(N, 512, x.H/16, x.W/16)
-    #print(score)
     score = self.bn1(score + x4)                      # element-wise add, size=(N, 512, x.H/16, x.W/16)
     score = self.relu(self.deconv2(score))            # size=(N, 256, x.H/8, x.W/8)
     score = self.bn2(score + x3)                      # element-wise add, size=(N, 256, x.H/8, x.W/8)
@@ -929,17 +929,32 @@ def ConfusionMatrixComponents(pred, target):
   #print("tp:{}, tn:{}, fp:{}, fn:{}".format(tp, tn, fp, fn))
 
   #precision 
-  precision = tp / ( tp + fp )
-  precision = precision.detach().cpu().numpy()
+  if( tp == 0 and fp == 0):
+    precision = 0.0
+  else:
+    precision = tp / ( tp + fp )
+    precision = precision.detach().cpu().numpy()
+
   #recall/sensitivity
-  recall = tp / (tp + fn)
-  recall = recall.detach().cpu().numpy()
+  if( tp == 0 and fn == 0):
+    recall = 0.0
+  else:
+    recall = tp / (tp + fn)
+    recall = recall.detach().cpu().numpy()
+
   #specificity
-  specificity = tn / (tn + fp)
-  specificity = specificity.detach().cpu().numpy()
+  if( tn == 0 and fp == 0):
+    specificity = 0.0
+  else:
+    specificity = tn / (tn + fp)
+    specificity = specificity.detach().cpu().numpy()
+
   #IoU
-  IoU = tp / (tp + fn + fp)
-  IoU = IoU.detach().cpu().numpy()
+  if( tp == 0.0 and fn == 0.0 and fp == 0.0):
+    IoU = 0.0
+  else:
+    IoU = tp / (tp + fn + fp)
+    IoU = IoU.detach().cpu().numpy()
 
   total_obs = (tp+fp+tn+fn)
   observed_agg = (tp+tn)/total_obs
@@ -997,6 +1012,16 @@ def PrecisionRecall(precision, recall):
   plt.title('Precision-Recall')
   plt.legend()
 
+def PlotRecall(test_recall):
+  plt.plot(test_recall, label='Validation Recall')
+  plt.title('Recall plot')
+  plt.legend()
+
+def PlotPrecision(test_precision):
+  plt.plot(test_precision, label='Validation Precision')
+  plt.title('Precision Plot')
+  plt.legend()
+
 PlotLoss(train_losses, val_losses)
 
 PlotAccuracy(accuracy, pixelAccs_mean)
@@ -1004,6 +1029,10 @@ PlotAccuracy(accuracy, pixelAccs_mean)
 PlotIoU(train_iou_mean, ious_mean)
 
 """We plot ROC over precision-recall becauase we have more background pixels as compared to the landfill pixels. Precision is more focussed on positive class than on the negative class and it actually measures the probablity of correct detection of positive values. ROC curve on the other hand meaures the ability to distinguish between classes and hence is a better measure for imbalanced classes"""
+
+PlotRecall(val_recall_mean)
+
+PlotPrecision(val_precision_mean)
 
 #extract multispectral images
 ExtractFiles(TIF_file_path , os.path.join(out_path, 'MultiSpectralTIF'))
@@ -1014,13 +1043,28 @@ val_model = FCN8s(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_f
 val_model.load_state_dict(torch.load(model_path, map_location='cpu'))
 val_model.eval()
 
+def im_convert(image_name, channels):
+  image = rasterio.open(os.path.join(train_path, image_name)).read()
+  #false color composite visualisation
+  if(channels == 8):
+    raster = np.dstack((image[4,:,:], image[2,:,:],image[1,:,:])) 
+  elif(channels == 4):
+    raster = np.dstack((image[2,:,:], image[1,:,:],image[0,:,:]))
+  return raster
+
 valFrame = pd.read_csv(multispectral_labels, usecols=["Idx", "Image Index", "IsLandfill"])
 data = valFrame.values.tolist()
 label = pd.read_csv(multispectral_labels, usecols=["IsLandfill"])
 
+
+val_dataset = CustomLandfillDataset(data=val_idx.values.tolist(), dsType = 'val', transforms=None, 
+                                      labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)    
+
+"""
+
 val_dataset = CustomLandfillDataset(data=data, dsType = 'val', transforms=None, labelCSV=multispectral_labels, 
                                     imgpath=multispectral_path, jsonpath=multispectral_json)                                
-
+"""
 #data loader
 val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
                                            batch_size=batch_size,

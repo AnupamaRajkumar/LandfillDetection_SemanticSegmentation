@@ -244,8 +244,8 @@ print("Test data class proportions:", get_class_proportion(test_idx))
 batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 40
-lr = 0.5e-3
+epochs = 70
+lr = 2e-4
 w_decay = 1e-5
 momentum = 0.9
 step_size = 10
@@ -599,11 +599,6 @@ remove_fc = False
 pretrained_model_path ='./PreTrainedModels/selimsef_spacenet4_resnet34unet_solaris_weights.pth'
 enc_model = 'SolarisPreTrained'
 
-maxpool_ranges = {
-    'resnet34'             : ((0, 5), (5, 10), (10, 17), (17, 24), (24, 31)),
-    'SolarisPreTrained'    : ((0, 5), (5, 10), (10, 17), (17, 24), (24, 31)),
-}
-
 def load_model(enc_model=enc_model):
   if enc_model == 'resnet18':
     print('---loading ResNet18----')
@@ -646,14 +641,13 @@ class FCN8s(nn.Module):
     self.num_classes = num_classes
     self.enc_model   = load_model(enc_model)
     self.relu    = nn.ReLU(inplace=True)
-    #self.maxpool_ranges = maxpool_ranges[enc_model]
         
     #use this piece of code to freeze and unfreeze layers for training
 
     cnt = 0
     for child in self.enc_model.children():
         for name, param in child.named_parameters():
-          if cnt < 21:
+          if cnt < 21:            #21
             #print(name)
             param.requires_grad = False
           cnt += 1

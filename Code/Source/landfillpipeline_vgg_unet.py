@@ -81,8 +81,8 @@ repo path : https://github.com/AnupamaRajkumar/LandfillDataset.git
 Multispectral_path = './Multispectral.7z'                                       #path of zip files
 TIF_file_path = './MultiSpectral/HR_TIF_Files_MultiSpectral.7z'
 JSON_file_path = './MultiSpectral/LandfillCoordPolygons.7z'
-multispectral_json = './LandfillCoordPolygonMulti/LandfillCoordPolygons'
-multispectral_path = './MultiSpectralTIF/HR_TIF_Files'
+multispectral_json = './MultiSpectralTIF/HR_TIF_Files/LandfillCoordPolygons'
+multispectral_path = './MultiSpectralTIF/HR_TIF_Files/HR_TIF_Files'
 multispectral_labels = './MultiSpectral/MultiSpectralData.csv'
 
 #All the paths related to pansharpened datset
@@ -94,6 +94,13 @@ train_path = './HR_TIF_Files'
 train_labels = './Pansharpened/PanSharpenedData.csv'
 #Output directory path
 out_path = './'                                                                 #output path of extracted files
+
+Validation_TIF_file_path = './ValidationData/ValSet/HR_TIF_Files.7z'
+Validation_JSON_file_path = './ValidationData/ValSet/LandfillCoordPolygons.7z'
+ValSet_labels = './ValidationData/ValSet/ValData.csv'
+ValSet_json = './ValidationData/LandfillCoordPolygons'
+ValSet_path = './ValidationData/HR_TIF_Files'
+val_path = './ValidationData'
 
 #dimensions of the figure to be displayed
 width = 15
@@ -119,10 +126,15 @@ def DownloadMultiSpectralDataset():
 """Pansharpened dataset"""
 
 def DownloadPanSharpenedDataset():
-  !wget https://www.dropbox.com/s/y048lu2ehtsmo3r/Pansharpened.7z?dl=0
+  !wget https://www.dropbox.com/s/8huwne6of80v5l3/Pansharpened.7z?dl=0
   os.rename('Pansharpened.7z?dl=0', 'Pansharpened.7z')
   ExtractFiles('Pansharpened.7z', out_path)
   #os.rmdir(Pansharpened_path)
+
+def DownloadValidationDataset():
+  !wget https://www.dropbox.com/s/wvta73s1vcn7n9b/ValSet.7z?dl=0
+  os.rename('ValSet.7z?dl=0', 'Validation.7z')
+  ExtractFiles('Validation.7z', val_path)
 
 def DownloadPreTrainedModels():
   !wget https://www.dropbox.com/s/rh7lmxxhqn9cm2y/PreTrainedModels.7z?dl=0
@@ -130,17 +142,14 @@ def DownloadPreTrainedModels():
   ExtractFiles('PreTrainedModels.7z', out_path)
 
 DownloadPanSharpenedDataset()
-DownloadMultiSpectralDataset()
+#DownloadMultiSpectralDataset()
 
 DownloadPreTrainedModels()
 
+DownloadValidationDataset()
+
 """Extracting the multispectral dataset\
 Run this cell if working with multispectral dataset
-
-#extract multispectral images
-ExtractFiles(TIF_file_path , out_path)
-#extract multispectral json files
-ExtractFiles(JSON_file_path , out_path)
 
 Extracting the pansharpened dataset\
 Run this cell if working with pansharpened dataset
@@ -150,6 +159,11 @@ Run this cell if working with pansharpened dataset
 ExtractFiles(PanSharpened_TIF_file_path , out_path)
 #extract multispectral json files
 ExtractFiles(PanSharpened_JSON_file_path , out_path)
+
+#extract pansharpened images
+ExtractFiles(Validation_TIF_file_path , val_path)
+#extract multispectral json files
+ExtractFiles(Validation_JSON_file_path , val_path)
 
 def im_convert(image_name, channels):
   image = rasterio.open(os.path.join(train_path, image_name)).read()
@@ -224,19 +238,19 @@ We will use random over-sampling as we have a small set of data - TBD
 !!Run this only if not using k fold cross validation
 """
 
-train_ratio = 0.70
+train_ratio = 0.80
 test_ratio = 0.20
-validation_ratio = 0.10
+#validation_ratio = 0.10
 
 train_idx, test_idx, train_lab, test_lab = train_test_split(dataFrame, label, 
                                                             test_size = test_ratio, 
                                                             shuffle=True, stratify=label)
 
-
+"""
 train_idx, val_idx, train_lab, val_lab = train_test_split(train_idx, train_lab,
                                                           test_size = validation_ratio,
                                                           shuffle=True, stratify=train_lab)
-
+"""
 
 
 
@@ -250,7 +264,7 @@ print("Test data class proportions:", get_class_proportion(test_idx))
 batch_size = 5
 num_workers = 1
 num_classes = 2       #landfill or background
-epochs = 40
+epochs = 100
 lr = 1e-3
 w_decay = 1e-5
 momentum = 0.9
@@ -292,6 +306,12 @@ class CustomLandfillDataset(torch.utils.data.Dataset):
     #random rotation
     image = TF.rotate(image, angle=10.0)
     mask = TF.rotate(mask, angle=10.0)
+
+    image = TF.rotate(image, angle=45.0)
+    mask = TF.rotate(mask, angle=45.0)
+
+    image = TF.rotate(image, angle=60.0)
+    mask = TF.rotate(mask, angle=60.0)
 
     #Gaussian Blur
     image = TF.gaussian_blur(image, kernel_size=(3,3))
@@ -582,10 +602,10 @@ ref: https://github.com/pochih/FCN-pytorch/tree/8436fab3586f118eb36265dab4c5f900
 UNet encoder configurations
 """
 
-pretrained = False
-remove_fc = False
+pretrained = True
+remove_fc = True
 pretrained_model_path ='./PreTrainedModels/xdxd_spacenet4_solaris_weights.pth'
-enc_model = 'SolarisPreTrained'
+enc_model = 'vgg16'
 
 maxpool_ranges = {
     'vgg11'             : ((0, 3), (3, 6),  (6, 11),  (11, 16), (16, 21)),
@@ -646,7 +666,7 @@ class DecoderBlock(nn.Module):
 """UNet model with encoder selected from encoder routine"""
 
 class UNet(nn.Module):
-  def __init__(self, pretrained=pretrained, enc_model=enc_model, requires_grad=True, remove_fc=remove_fc, num_classes=num_classes):
+  def __init__(self, pretrained=pretrained, enc_model=enc_model, requires_grad=False, remove_fc=remove_fc, num_classes=num_classes):
     super().__init__()
     self.num_classes = num_classes
     self.encoder_copy_crop =  encoder_copy_crop[enc_model]
@@ -785,6 +805,11 @@ for name, param in UNet_model.named_parameters():
   if param.requires_grad == True:
     print(name, "\t", param.size())
     log_file.write('{}: {}\n'.format(name, param.size()))
+
+NumOfParameters = sum(p.numel() for p in UNet_model.parameters())
+NumOfTrainableParams = sum(p.numel() for p in UNet_model.parameters() if p.requires_grad)
+
+print("Total number of parameters:", NumOfParameters, "\t Number of trainable parameters:", NumOfTrainableParams)
 
 log_file.write(f'**************************************************************\n')
 log_file.close()
@@ -1142,17 +1167,12 @@ PlotPrecision(val_precision_mean)
 Use images from multispectral dataset for validation
 """
 
-#extract multispectral images
-ExtractFiles(TIF_file_path , os.path.join(out_path, 'MultiSpectralTIF'))
-#extract multispectral json files
-ExtractFiles(JSON_file_path , os.path.join(out_path, 'LandfillCoordPolygonMulti'))
-
 val_model = UNet(pretrained=pretrained, enc_model=enc_model, remove_fc=remove_fc, num_classes=num_classes)
 val_model.load_state_dict(torch.load(model_path, map_location='cpu'))
 val_model.eval()
 
 def im_convert(image_name, channels):
-  image = rasterio.open(os.path.join(train_path, image_name)).read()
+  image = rasterio.open(os.path.join(ValSet_path, image_name)).read()
   #false color composite visualisation
   if(channels == 8):
     raster = np.dstack((image[4,:,:], image[2,:,:],image[1,:,:])) 
@@ -1160,17 +1180,17 @@ def im_convert(image_name, channels):
     raster = np.dstack((image[2,:,:], image[1,:,:],image[0,:,:]))
   return raster
 
-valFrame = pd.read_csv(multispectral_labels, usecols=["Idx", "Image Index", "IsLandfill"])
+valFrame = pd.read_csv(ValSet_labels, usecols=["Idx", "Image Index", "IsLandfill"])
 data = valFrame.values.tolist()
-label = pd.read_csv(multispectral_labels, usecols=["IsLandfill"])
-
+label = pd.read_csv(ValSet_labels, usecols=["IsLandfill"])
+"""
 val_dataset = CustomLandfillDataset(data=val_idx.values.tolist(), dsType = 'val', transforms=None, 
                                       labelCSV=train_labels, imgpath=train_path, jsonpath=pansharpened_json)    
 
 """
-val_dataset = CustomLandfillDataset(data=data, dsType = 'val', transforms=None, labelCSV=multispectral_labels, 
-                                    imgpath=multispectral_path, jsonpath=multispectral_json)                                
-"""
+val_dataset = CustomLandfillDataset(data=data, dsType = 'val', transforms=None, labelCSV=ValSet_labels, 
+                                    imgpath=ValSet_path, jsonpath=ValSet_json)                                
+
 #data loader
 val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
                                            batch_size=batch_size,

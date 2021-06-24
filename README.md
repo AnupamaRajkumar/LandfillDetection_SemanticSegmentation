@@ -1,4 +1,4 @@
-# MasterThesis
+# Automatic Detection of Landfill Using Deep Learning
 
 Landfill dataset can be accessed from:\
 Dropbox : Please drop me an e-mail at anupamar228@gmail.com and I will provide the link to access the dataset folder \

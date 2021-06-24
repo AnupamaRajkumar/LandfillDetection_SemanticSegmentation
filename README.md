@@ -1,7 +1,7 @@
 # MasterThesis
 
 Landfill dataset can be accessed from:\
-Dropbox : https://www.dropbox.com/home/Landfill_Dataset/LandfillDataset \
+Dropbox : Please drop me an e-mail at anupamar228@gmail.com and I will provide the link to access the dataset folder \
 Report available at: https://www.dropbox.com/sh/4hhtqy35vtape6w/AAA7EC3jIY_u6VWdCHeiLJYla?dl=0
 
 1. Comparative result of all the algorithms
